@@ -97,6 +97,8 @@ def main():
     ap.add_argument("--data", required=True)
     ap.add_argument("--server-tz", default="ny+7")
     ap.add_argument("--from", dest="start", default=None)
+    ap.add_argument("--to", dest="end", default=None, help="exclusive end date (run years in parallel: the bot's "
+                    "daily-loss guard rescans every closed trade on every bar, so one long run is O(bars x trades))")
     ap.add_argument("--spread", type=float, nargs="*", default=[0.18, 0.30, 0.45])
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
@@ -108,6 +110,8 @@ def main():
     d = d[d.index >= first_m5]
     if a.start:
         d = d[d.index >= pd.Timestamp(a.start, tz="UTC")]
+    if a.end:
+        d = d[d.index < pd.Timestamp(a.end, tz="UTC")]
     d = d.rename(columns={"volume": "tick_volume"})
     d["real_volume"] = 0.0
     print(f"bars {len(d):,}  {d.index[0]} -> {d.index[-1]}  (UTC)")
