@@ -1,6 +1,19 @@
 """
 EMBER — Expansion-Move Breakout, Edge-tested, Risk-capped
 =============================================================
+EMBER-23 (2026-10-09): JPN225 REMOVED. Markets: XAUUSD + USDJPY (default), BTCUSD as candidate (--symbols ... BTCUSD).
+  Independent re-test (bot_audit/ember_bt.py, Vantage M5, Atlas-level spreads: gold $0.45, USDJPY 0.5 pip, USDJPY exit at 01:05):
+    XAUUSD 2018-09 -> 2026-10: 579 trades, win 54%, +0.052R a trade, z 2.8; both halves positive; 2019-2020 (before the 2021+ data
+           EMBER was built on) +0.10R / +0.07R.
+    USDJPY 2012 -> 2026: 1,063 trades, +0.017R to +0.021R, z 1.1-1.3: weaker than the +0.048R in the notes below. It mainly adds
+           trading days and speed in the evaluation, not much edge.
+  Atlas Access replay (bot_audit/ember_atlas.py, gold + USDJPY, 2018-2026, positions held overnight, Protector modelled):
+    evaluation at 1.5% per trade: pass ~88% of start dates, ~5% breached, median ~52 trading days (1.0%: ~82%, no breaches, ~74 days)
+    funded at 0.75% per trade: alive after a year in every start date, Protector never reached, ~0.7 payouts a year
+           (~$1,000/yr on $50k). The "3 days >= +0.5% closed" payout rule is the bottleneck, not the drawdown.
+  Presets changed accordingly: --preset evaluation = 1.5%, --preset funded = 0.75% (cap 1.5%, shield 1.7%).
+  The history below is kept as it was written.
+
 Daily volatility-breakout bot for XAUUSD (gold) and USDJPY, TOGETHER in one bot like ORB's pairs (--symbols picks a subset), built on Toby Crabel's own published Opening Range
 Breakout baseline ("A Century of Evidence", 2025): stretch = 0.8 x the 10-day average true range,
 from the day's OPEN. Whichever side (up or down) price touches first that day becomes the position,
@@ -253,7 +266,7 @@ try:
 except ImportError:
     MT5_AVAILABLE = False
 
-APP_VERSION = "2026-10-06.EMBER-22"
+APP_VERSION = "2026-10-09.EMBER-23"
 
 # ============================================================
 # STRATEGY PARAMETERS (validated — see header; not fit beyond the published 0.8/10 baseline)
@@ -284,24 +297,21 @@ SYMBOL_PROFILES = {
     "XAUUSD": dict(pip_size=0.10, spread_pips=3.0, digits=2, magic=990710, exit_delay_min=0),
     "USDJPY": dict(pip_size=0.01, spread_pips=1.0, digits=3, magic=990720, exit_delay_min=65),
     # CANDIDATE markets (see CANDIDATE_NOTES): they are NOT started unless asked for with --symbols. pip_size = 1 price unit (one dollar of Bitcoin, one index point); digits are corrected from the
-    # broker's own symbol info at start-up. Neither needs an exit delay: BTCUSD's spread is the same all day (no rollover widening) and JPN225 is closed 00:00-00:55 and reopens at 01:00 with a normal spread.
+    # broker's own symbol info at start-up. No exit delay: BTCUSD's spread is the same all day (no rollover widening). (JPN225 was removed in EMBER-23.)
     "BTCUSD": dict(pip_size=1.0, spread_pips=67.0, digits=2, magic=990730, exit_delay_min=0),
-    "JPN225": dict(pip_size=1.0, spread_pips=9.0, digits=2, magic=990740, exit_delay_min=0),
 }
 # The two proven markets are what a plain "py ember_app.py" runs. A market added later NEVER starts by itself (an old command line must not suddenly trade something new).
 DEFAULT_SYMBOLS = ["XAUUSD", "USDJPY"]
 CANDIDATE_NOTES = {
     "BTCUSD": "CANDIDATE, not yet proven live: the same rule showed +0.067R a trade on 6.3 years of this broker's data (z 2.6) and CONFIRMED on older, never-seen years (+0.141R, z 3.0, 246 trades; long AND short positive). "
               "Costs measured at Atlas: spread $67 + overnight swap -15% a year = about 0.026R a trade. Crypto leverage at Atlas is reported as 1:2 in the evaluation and 1:1 funded (confirm it with Atlas). Trade it only after it has run on demo.",
-    "JPN225": "CANDIDATE, not yet proven live: +0.067R a trade on 3.8 years of this broker's data (z 2.2), CONFIRMED on older, never-seen years (+0.053R, z 2.6, 729 trades). Costs measured at Atlas: spread 9 points + swap "
-              "= about 0.006R a trade. Closed 00:00-00:55 server time. Trade it only after it has run on demo.",
 }
 PRICE_DIGITS = 2
 EXIT_DELAY_MIN = 0
 
 # ONE copy of EMBER trades every market in ACTIVE_SYMBOLS (default: DEFAULT_SYMBOLS = gold and USDJPY), like ORB trades its pairs. Each market has its own
 # state, pending orders, magic number, risk % and on/off switch; the account-level guards (daily loss, drawdown, profit target, news, pause) are
-# shared. To run each market on its own instead, start it with --symbols XAUUSD or --symbols USDJPY; to add a candidate:  --symbols XAUUSD USDJPY BTCUSD JPN225.
+# shared. To run each market on its own instead, start it with --symbols XAUUSD or --symbols USDJPY; to add the candidate:  --symbols XAUUSD USDJPY BTCUSD.
 ACTIVE_SYMBOLS = list(DEFAULT_SYMBOLS)
 RISK_PCT_BY_SYMBOL = {name: 0.5 for name in SYMBOL_PROFILES}
 SYMBOL_ENABLED = {name: True for name in SYMBOL_PROFILES}
@@ -320,7 +330,8 @@ def _preset(risk, dd_pct, daily_pct, target, cap, shield):
 # reviewed 27 Sep 2026). Evaluation: +3% target, 10% trailing equity drawdown, 5% daily. Funded: no target, 6% trailing equity, 3% daily, and Atlas Protector
 # (open loss >= 2% of the starting balance closes everything and cuts the profit split to 50% for good). The daily guard is set to ~60% of the daily limit.
 # The risk numbers come from this project's own measurements (header): 1.0% is the safe speed for the evaluation; 0.5% keeps the funded drawdown inside 6%.
-PRESETS = {"evaluation": _preset(1.0, 10, 3.0, 3, 0, 0), "funded": _preset(0.5, 6, 1.8, 0, 1.5, 1.7)}
+# EMBER-23: re-measured on gold + USDJPY 2018-2026 (bot_audit/ember_atlas.py): 1.5% passes faster with ~5% breaches; 0.75% funded survived every start date.
+PRESETS = {"evaluation": _preset(1.5, 10, 3.0, 3, 0, 0), "funded": _preset(0.75, 6, 1.8, 0, 1.5, 1.7)}
 
 
 def apply_symbol(name: str) -> None:
@@ -616,7 +627,7 @@ def _warn_once(key: str, msg: str, every: float = 600.0):
 
 # The same market can carry another name at another broker (Vantage calls the Nikkei JPN225ft; Atlas calls it JPN225). When the exact name is not there, verify_symbol() looks through
 # these and remembers the one it finds. The global --suffix still applies to every market that has no such alias.
-BROKER_NAME_ALTERNATIVES = {"JPN225": ["JPN225ft", "JP225", "Nikkei225", "JPN225.r"], "BTCUSD": ["BTCUSD.r", "BTCUSDm"], "XAUUSD": ["XAUUSD.r", "XAUUSDm"], "USDJPY": ["USDJPY.r", "USDJPYm"]}
+BROKER_NAME_ALTERNATIVES = {"BTCUSD": ["BTCUSD.r", "BTCUSDm"], "XAUUSD": ["XAUUSD.r", "XAUUSDm"], "USDJPY": ["USDJPY.r", "USDJPYm"]}
 _BROKER_NAME: Dict[str, str] = {}
 
 
@@ -2049,8 +2060,8 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
         This copy trades <b id="marketsLine2"></b> together, like ORB does with its pairs; each market has its own orders, state, risk % and Stop/Start button,
         while the account guards below are shared. The two PROVEN markets, nothing tuned for them: USDJPY (14 years, 1,072 trades, +0.052R per trade, 12 of 14 years positive;
         weaker in the last 8 years, about +0.04R) and gold (14.7 years, 1,106 trades, about +0.04R, z 2.8: the weaker of the two). All 43 Atlas instruments were screened with this
-        same rule and none passed the strict bar. BTCUSD and JPN225 are CANDIDATES: confirmed on older years the screening had never seen (BTCUSD +0.14R, z 3.0; JPN225 +0.05R, z 2.6)
-        but not yet proven live; they run only when the bot is started with them (--symbols XAUUSD USDJPY BTCUSD JPN225), so run them on demo first.
+        same rule and none passed the strict bar. BTCUSD is a CANDIDATE: confirmed on older years the screening had never seen (BTCUSD +0.14R, z 3.0); JPN225 was removed
+        but not yet proven live; they run only when the bot is started with them (--symbols XAUUSD USDJPY BTCUSD), so run it on demo first.
         On a small account the broker's smallest lot can risk more than the risk % below on a wide-stop market (gold on a 5K account): that market
         simply places no orders that day and says why in the Activity Log, while the others carry on.
       </div>
