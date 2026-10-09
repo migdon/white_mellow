@@ -28,3 +28,13 @@ HK50 has no data under the unchanged rule: the lunch break removes the 12:00 and
 ever counts as complete.
 
 **Verdict:** the rule works only on the US cash session. NBRO stays NAS100 + SPX500.
+
+## Gold: PROTOCOL_GOLD.md, family of 2 (Vantage XAUUSD M5, Sep 2018 → Oct 2026, spread $0.18)
+
+| Anchor | Trades | Avg/trade | z full | z recent | z older | Doubled cost | Verdict |
+|---|---|---|---|---|---|---|---|
+| COMEX 08:20 NY | 1,436 | −0.003% | −0.27 | −0.30 | 0.18 | −0.012% | FAIL |
+| NYSE 09:30 NY | 1,383 | +0.006% | 0.56 | 0.83 | −1.44 | −0.003% | FAIL |
+
+The midpoint cut fell in 2019 because the file holds daily bars before Sep 2018. Splitting the M5 part alone would not
+change the verdict: both full-sample z are near 0.
