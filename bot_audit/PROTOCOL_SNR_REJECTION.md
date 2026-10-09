@@ -21,3 +21,11 @@ Primary: XAUUSD, Sep 2018 - 2026. PASS if mean net R per trade > 0 with t >= 2.0
 and mean still > 0 with doubled spread. Secondary markets NAS100, EURUSD: same, Bonferroni t >= 2.4.
 Variants (leg >= 4, zone 0.2/0.5 ATR, always 1R, always 2R, no stop-after-loss) are reported for information only;
 they cannot turn a FAIL into a PASS.
+
+## Addendum (2026-10-09, before running): can a POI / entry filter rescue it?
+Six filters on the gold setups, each a reading of "stronger S/R" or "surer entry":
+F1 level touched >= 2 times (2+ swing points inside the zone) · F2 leg extreme within 0.3 ATR of the previous server day's high/low ·
+F3 entry during London/NY (server 10:00-23:00) · F4 reversal candle is a pin/hammer (wick on the rejection side >= 50% of range) ·
+F5 reversal candle tick volume > 1.5x its 20-bar average · F6 leg extreme within 0.3 ATR of a $10 round number.
+Screen: each filter keeps the subset of the primary trades it allows (the day/position sequence is not re-run).
+A filter PASSES only with mean R > 0, t >= 2.64 (Bonferroni over 6), both halves > 0. Otherwise no filter is added.

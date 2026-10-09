@@ -16,6 +16,7 @@ The rule (the same one the backtest bot_audit/snr_rejection.py uses):
 
     python snr_app.py                       # XAUUSD, 0.5% risk per trade
     python snr_app.py --risk 0.25 --symbols XAUUSD NAS100
+    python snr_app.py --london-ny           # only during London + New York (server 10:00-23:00)
     python snr_app.py --dry-run             # check the last completed bar, place nothing
 Magic number 991100 (its own; it never touches other bots' orders). Log: snr_log.txt next to this file.
 """
@@ -158,6 +159,8 @@ def main():
     ap.add_argument("--zone", type=float, default=0.3, help="rejection-area half width in ATR14(30m)")
     ap.add_argument("--max-trades", type=int, default=3, help="max trades per server day")
     ap.add_argument("--daily-guard", type=float, default=2.0, help="no new orders once today's loss reaches this %%")
+    ap.add_argument("--london-ny", action="store_true",
+                    help="only place orders 10:00-23:00 server time (London+NY): least bad filter in the test, still negative")
     ap.add_argument("--mt5-path", default=None)
     ap.add_argument("--suffix", default="")
     ap.add_argument("--dry-run", action="store_true")
@@ -217,7 +220,8 @@ def main():
                 side, trig, stop, tgt, aligned = st
                 n_today, lost_today = today_record(sday)
                 day_loss = (day_start_eq - acc.equity) / acc.balance * 100
-                why = ("a trade/order is already open" if orders or positions else
+                why = ("outside London/NY hours" if a.london_ny and not 10 <= server_now.hour < 23 else
+                       "a trade/order is already open" if orders or positions else
                        "already lost today" if lost_today else
                        f"{n_today} trades today" if n_today >= a.max_trades else
                        f"daily loss {day_loss:.2f}%" if day_loss >= a.daily_guard else None)

@@ -16,3 +16,17 @@ Every version loses. It loses even with zero spread, so the costs are not the ca
 
 Caveat: the video's zones and "clean candles" are judged by eye; this is one exact reading of them. A 1R target needs more than 50% winners
 (more than ~55% after spread) to make money; the mechanical version wins 34-38%.
+
+## POI / entry filters (gold, protocol addendum; pass needs t >= 2.64 and both halves > 0)
+| Filter | Trades kept | Win % | Mean R | t |
+|---|---|---|---|---|
+| none | 228 | 34 | -0.24 | -3.3 |
+| F1 level touched 2+ times | 109 | 36 | -0.21 | -2.0 |
+| F2 at previous day's high/low | 23 | 30 | -0.35 | -1.6 |
+| F3 London/NY hours only | 132 | 40 | -0.10 | -1.0 |
+| F4 pin bar / hammer reversal | 41 | 32 | -0.24 | -1.4 |
+| F5 volume spike on reversal | 54 | 30 | -0.35 | -2.5 |
+| F6 near a $10 round number | 58 | 33 | -0.26 | -1.8 |
+No filter passes; none turns the mean positive. London/NY hours cut the loss the most (the Asian-session setups lose -0.44R),
+so snr_app.py got an optional --london-ny switch. Stronger-looking zones (more touches, previous-day levels, round numbers,
+hammers, volume) did NOT win more often.

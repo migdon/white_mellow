@@ -14,7 +14,7 @@ def load(path):
     d = d[d["time"] >= "2018-09-01"].reset_index(drop=True)
     d = d[d["time"].diff().dt.total_seconds().fillna(300) <= 3 * 86400]
     b = d.set_index("time").resample("30min", label="left", closed="left").agg(
-        open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last")).dropna().reset_index()
+        open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last"), tv=("tick_volume", "sum")).dropna().reset_index()
     return d.reset_index(drop=True), b
 
 
@@ -90,12 +90,12 @@ def run(m5, b, spread, leg_min=3, zone=0.3, mode="trend", stop_after_loss=True):
             if res is None:
                 exitpx = mC[end] if side == 1 else mC[end] + spread
                 res = side * (exitpx - px) / risk
-            trades.append((T[r + 1], side, aligned, res, risk / atr[r]))
+            trades.append((T[r + 1], side, aligned, res, risk / atr[r], r, ext))
             day_count += 1
             day_lost = res < 0
             busy_until = int(np.searchsorted(T, m5t[jx], side="right")) - 1
             break
-    return pd.DataFrame(trades, columns=["time", "side", "aligned", "R", "risk_atr"])
+    return pd.DataFrame(trades, columns=["time", "side", "aligned", "R", "risk_atr", "r", "ext"])
 
 
 def stats(t):
