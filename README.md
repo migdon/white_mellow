@@ -56,3 +56,10 @@ python -m noise_fx.export_m5 --list                                   # hanapin 
 python -m noise_fx.export_m5 --out m5_export --from 2012-01-01 --only <mga pangalan>
 python -m noise_fx.run_indices --data m5_export --names NAS100=<pangalan> SPX500=<pangalan> ...
 ```
+
+## TradingView indicator (tradingview/)
+
+`tradingview/nbro_noise_area.pine` — the NBRO rule as a Pine v5 indicator for a 1–5 minute NAS100/SPX500 chart.
+It draws the noise bands and the session VWAP, and marks entries, exits and the emergency stop. Alerts fire on the first
+tick of each check bar. `tradingview/check_pine_logic.py` is a line-by-line Python port of the indicator; on Vantage
+NAS100 and SPX500 M5 (2018–2026) it makes exactly the same trades as the validated engine (1,427/1,427 and 1,464/1,464).

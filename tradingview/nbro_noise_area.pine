@@ -1,0 +1,225 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// NBRO — Noise Area intraday momentum (Zarattini, Aziz & Barbon 2024), the same rule as nbro_app.py.
+// Use on a 5-minute (or 1-minute) chart of NAS100 / SPX500 (or US100, US500, NQ, ES, QQQ, SPY).
+//
+//   session open O = 09:30 New York
+//   sigma(k)  = average over the last 14 COMPLETE sessions of |price at O+30k min / that session's open - 1|
+//   UPPER     = max(open, yesterday's close) x (1 + sigma)      LOWER = min(open, yesterday's close) x (1 - sigma)
+//   VWAP      = volume-weighted average price since 09:30 (bars before the check bar)
+//   checks at 10:00, 10:30 ... 15:30 (price P = open of the check bar):
+//       flat : P > UPPER -> LONG,  P < LOWER -> SHORT
+//       long : exit when P < min(UPPER, VWAP)     short : exit when P > max(LOWER, VWAP)
+//       after an exit, a new entry is allowed only at a LATER check
+//   emergency stop 1% from entry; everything closes at the open of the 15:55 bar.
+//
+// The stats table is at 1x notional, BEFORE spread/commission.
+//@version=5
+indicator("NBRO Noise Area", shorttitle="NBRO", overlay=true, max_labels_count=500)
+
+openH    = input.int(9, "Session open hour (New York)", minval=0, maxval=23)
+openM    = input.int(30, "Session open minute", minval=0, maxval=59)
+lookback = input.int(14, "Sigma lookback (complete sessions)", minval=5, maxval=60)
+stopPct  = input.float(1.0, "Emergency stop %", minval=0.1, step=0.1)
+showVwap = input.bool(true, "Show session VWAP")
+showLbl  = input.bool(true, "Show trade labels")
+showTbl  = input.bool(true, "Show stats table")
+
+TZ      = "America/New_York"
+NCHK    = 12      // checks at O+30 ... O+360
+END_MIN = 385     // O+385 = 15:55 bar: close everything at its open
+
+// ---------------------------------------------------------------- time
+t0      = timestamp(TZ, year(time, TZ), month(time, TZ), dayofmonth(time, TZ), openH, openM)
+m       = math.round((time - t0) / 60000.0)        // minutes since today's open (bar OPEN time)
+okTF    = timeframe.isintraday and timeframe.multiplier <= 5 and timeframe.isminutes
+
+// ---------------------------------------------------------------- state
+var float  sOpen      = na
+var int    sDay       = na
+var float  prevClose  = na
+var float  lastClose  = na
+var float  winClose   = na     // close of the last bar inside ANY day's 09:30-15:55 window ("yesterday's close" for NBRO)
+var int    winDay     = na
+var bool   reachedEnd = false
+var array<float>  moves = array.new_float(NCHK, na)
+var matrix<float> hist  = matrix.new<float>(0, NCHK)
+var float  cumPV = 0.0
+var float  cumV  = 0.0
+var int    pos     = 0
+var float  entryPx = na
+var float  stopPx  = na
+var int    lastK   = -1
+var int    nTr = 0
+var int    nWin = 0
+var float  sumRet = 0.0
+var float  curSigma = na
+
+longEntry  = false
+shortEntry = false
+exitSig    = false
+exitWhy    = ""
+
+f_complete(arr) =>
+    ok = true
+    for i = 0 to array.size(arr) - 1
+        if na(array.get(arr, i))
+            ok := false
+    ok
+
+f_close(px, why) =>
+    r = pos * (px / entryPx - 1.0)
+    [r, why]
+
+today = dayofmonth(time, TZ)
+
+// a position still open after its session's window (half-day / missing 15:55 bar) is closed at the last session price
+if okTF and pos != 0 and (sDay != today or m > END_MIN)
+    [r, w] = f_close(lastClose, "EOD (short day)")
+    nTr += 1
+    nWin += r > 0 ? 1 : 0
+    sumRet += r
+    exitSig := true
+    exitWhy := w
+    pos := 0
+
+// ---------------------------------------------------------------- new session (the 09:30 bar)
+if okTF and m == 0
+    // store the session that just ended, if it was complete
+    if not na(sOpen) and reachedEnd and f_complete(moves)
+        matrix.add_row(hist, matrix.rows(hist), array.copy(moves))
+        if matrix.rows(hist) > lookback
+            matrix.remove_row(hist, 0)
+    if not na(winClose) and winDay != today
+        prevClose := winClose     // last close of the most recent earlier session window, complete or not
+    sOpen := open
+    sDay := today
+    reachedEnd := false
+    array.fill(moves, na)
+    cumPV := 0.0
+    cumV := 0.0
+    lastK := -1
+
+inSess = okTF and not na(sOpen) and sDay == today and m >= 0 and m <= END_MIN
+if okTF and m >= 0 and m <= END_MIN
+    winClose := close
+    winDay := today
+ready  = matrix.rows(hist) >= lookback and not na(prevClose)
+
+hiRef = math.max(nz(sOpen), nz(prevClose, nz(sOpen)))
+loRef = math.min(nz(sOpen), nz(prevClose, nz(sOpen)))
+vwapPrev = cumV > 0 ? cumPV / cumV : sOpen
+
+float UB = na
+float LB = na
+
+if inSess
+    k = (m % 30 == 0 and m >= 30 and m <= 360) ? int(m / 30) - 1 : -1
+    if k >= 0
+        array.set(moves, k, math.abs(open / sOpen - 1.0))
+    // band shown = the sigma of the latest check reached (first check's before 10:00)
+    kShow = m < 30 ? 0 : math.min(int(m / 30) - 1, NCHK - 1)
+    if ready
+        curSigma := array.avg(matrix.col(hist, kShow))
+        UB := hiRef * (1.0 + curSigma)
+        LB := loRef * (1.0 - curSigma)
+
+    // 1) end of session: close at the open of the 15:55 bar
+    if m == END_MIN and pos != 0
+        [r, w] = f_close(open, "EOD")
+        nTr += 1
+        nWin += r > 0 ? 1 : 0
+        sumRet += r
+        exitSig := true
+        exitWhy := w
+        pos := 0
+
+    // 2) the 30-minute check, at the open of the check bar
+    exitedNow = false
+    if k >= 0 and ready and m < END_MIN
+        sig = array.avg(matrix.col(hist, k))
+        ubK = hiRef * (1.0 + sig)
+        lbK = loRef * (1.0 - sig)
+        P = open
+        if pos != 0
+            exitLine = pos > 0 ? math.min(ubK, vwapPrev) : math.max(lbK, vwapPrev)
+            if (pos > 0 and P < exitLine) or (pos < 0 and P > exitLine)
+                [r, w] = f_close(P, "exit")
+                nTr += 1
+                nWin += r > 0 ? 1 : 0
+                sumRet += r
+                exitSig := true
+                exitWhy := w
+                pos := 0
+                exitedNow := true
+        if pos == 0 and not exitedNow
+            if P > ubK
+                pos := 1
+                longEntry := true
+            else if P < lbK
+                pos := -1
+                shortEntry := true
+            if pos != 0
+                entryPx := P
+                stopPx := pos > 0 ? P * (1 - stopPct / 100.0) : P * (1 + stopPct / 100.0)
+
+    // 3) broker-side emergency stop, hit inside this bar
+    if pos != 0 and m < END_MIN
+        hitL = pos > 0 and low <= stopPx
+        hitS = pos < 0 and high >= stopPx
+        if hitL or hitS
+            px = pos > 0 ? math.min(open, stopPx) : math.max(open, stopPx)
+            [r, w] = f_close(px, "STOP")
+            nTr += 1
+            nWin += r > 0 ? 1 : 0
+            sumRet += r
+            exitSig := true
+            exitWhy := w
+            pos := 0
+
+    // bookkeeping for the next bars (VWAP uses bars BEFORE the check bar)
+    cumPV += hlc3 * volume
+    cumV += volume
+    lastClose := close
+    if m >= END_MIN - 5
+        reachedEnd := true
+
+// ---------------------------------------------------------------- drawing
+plot(UB, "Upper noise band", color=color.new(color.teal, 0), style=plot.style_linebr, linewidth=2)
+plot(LB, "Lower noise band", color=color.new(color.orange, 0), style=plot.style_linebr, linewidth=2)
+plot(showVwap and inSess ? (cumV > 0 ? cumPV / cumV : na) : na, "Session VWAP", color=color.new(color.gray, 20), style=plot.style_linebr)
+plot(inSess and pos != 0 ? stopPx : na, "Emergency stop", color=color.new(color.red, 40), style=plot.style_linebr)
+bgcolor(inSess and pos > 0 ? color.new(color.green, 92) : inSess and pos < 0 ? color.new(color.red, 92) : na)
+
+if showLbl and longEntry
+    label.new(bar_index, low, "LONG", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+if showLbl and shortEntry
+    label.new(bar_index, high, "SHORT", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+if showLbl and exitSig
+    label.new(bar_index, close, "x " + exitWhy, style=label.style_label_left, color=color.new(color.gray, 30), textcolor=color.white, size=size.tiny)
+
+// ---------------------------------------------------------------- alerts (fire on the first tick of the check bar)
+if longEntry
+    alert("NBRO LONG " + syminfo.ticker + " @ " + str.tostring(open), alert.freq_once_per_bar)
+if shortEntry
+    alert("NBRO SHORT " + syminfo.ticker + " @ " + str.tostring(open), alert.freq_once_per_bar)
+if exitSig
+    alert("NBRO EXIT (" + exitWhy + ") " + syminfo.ticker, alert.freq_once_per_bar)
+alertcondition(longEntry, "NBRO long entry", "NBRO LONG {{ticker}} @ {{open}}")
+alertcondition(shortEntry, "NBRO short entry", "NBRO SHORT {{ticker}} @ {{open}}")
+alertcondition(exitSig, "NBRO exit", "NBRO EXIT {{ticker}} @ {{close}}")
+
+// ---------------------------------------------------------------- stats
+var table tb = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 20), border_width=1)
+if showTbl and barstate.islast
+    table.cell(tb, 0, 0, "NBRO", text_color=color.white)
+    table.cell(tb, 1, 0, okTF ? (ready ? "ready" : "warming up " + str.tostring(matrix.rows(hist)) + "/" + str.tostring(lookback)) : "use a 1-5 min chart", text_color=okTF ? color.white : color.yellow)
+    table.cell(tb, 0, 1, "Trades", text_color=color.white)
+    table.cell(tb, 1, 1, str.tostring(nTr), text_color=color.white)
+    table.cell(tb, 0, 2, "Win rate", text_color=color.white)
+    table.cell(tb, 1, 2, nTr > 0 ? str.tostring(100.0 * nWin / nTr, "#.0") + "%" : "-", text_color=color.white)
+    table.cell(tb, 0, 3, "Avg / trade (1x, gross)", text_color=color.white)
+    table.cell(tb, 1, 3, nTr > 0 ? str.tostring(100.0 * sumRet / nTr, "#.000") + "%" : "-", text_color=color.white)
+    table.cell(tb, 0, 4, "Total (1x, gross)", text_color=color.white)
+    table.cell(tb, 1, 4, str.tostring(100.0 * sumRet, "#.00") + "%", text_color=sumRet >= 0 ? color.lime : color.red)
+    table.cell(tb, 0, 5, "Position", text_color=color.white)
+    table.cell(tb, 1, 5, pos > 0 ? "LONG" : pos < 0 ? "SHORT" : "flat", text_color=pos > 0 ? color.lime : pos < 0 ? color.red : color.white)
