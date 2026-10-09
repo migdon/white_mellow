@@ -44,3 +44,16 @@ Assumptions:
 - Close-to-close days, with conservative intraday lows (both indices at their worst at the same moment).
 - No slippage beyond the spread.
 - Gaps through the 1% stop are not modelled.
+
+## Tested improvement: volatility-targeted sizing (Zarattini et al. 2024)
+
+- **Rule.** Weight = median σ / σ, where σ is the standard deviation of the last 14 session returns, known at the open.
+  Capped at 4x.
+- **Pass bar, set beforehand:** better Sharpe in BOTH halves of the data.
+
+| Version | Full | 2018–22 | 2022–26 | 2023+ | Worst day (1x) |
+|---|---|---|---|---|---|
+| NBRO now | 1.14 | 1.49 | 0.75 | 0.69 | −6.1% |
+| Vol-targeted | 1.15 | 1.61 | 0.70 | 0.67 | −4.8% |
+
+**FAIL.** No better Sharpe, and worse in the recent half. It only makes the worst day smaller. Not adopted.
