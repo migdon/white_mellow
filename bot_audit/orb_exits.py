@@ -54,7 +54,7 @@ def trades(path, side, sp, floor):
                 fav = ((PH - e) if side == 1 else (e - (PL + adj))) / risk
                 adv = ((PL - e) if side == 1 else (e - (PH + adj))) / risk
                 cl = ((PC - e) if side == 1 else (e - (PC + adj))) / risk
-                out.append((day, mm, adv, fav, cl))
+                out.append((day, mm, adv, fav, cl, after.time.iloc[i + 1]))
                 break
     return out
 
