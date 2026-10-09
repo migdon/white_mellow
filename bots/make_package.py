@@ -76,7 +76,8 @@ UNANG BESES (isang beses lang)
 
 PATAKBUHIN
   1. Buksan ang config.py at ilagay ang (mga) account mo.
-  2. Subukan muna (walang trade):   python atlas_bot.py --dry-run
+  2. Subukan kung kumokonekta ang bawat MT5:   python check_mt5.py
+     Subukan ang settings (walang trade):      python atlas_bot.py --dry-run
   3. I-double click ang start_atlas_bot.bat
   4. Dashboard sa browser:  Atlas1 http://127.0.0.1:8800   Atlas2 :8801   Atlas3 :8802 ...
 
@@ -143,5 +144,6 @@ if __name__ == "__main__":
         f.write(BAT)
     for b in ("nbro_app.py", "ember_app.py"):
         shutil.copy(os.path.join(HERE, b), os.path.join(OUT, "bots", b))
+    shutil.copy(os.path.join(HERE, "check_mt5.py"), os.path.join(OUT, "check_mt5.py"))
     zp = shutil.make_archive(OUT, "zip", os.path.dirname(OUT), "AtlasBot")
     print(f"wrote {OUT}/ and {zp}")
