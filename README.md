@@ -63,3 +63,11 @@ python -m noise_fx.run_indices --data m5_export --names NAS100=<pangalan> SPX500
 It draws the noise bands and the session VWAP, and marks entries, exits and the emergency stop. Alerts fire on the first
 tick of each check bar. `tradingview/check_pine_logic.py` is a line-by-line Python port of the indicator; on Vantage
 NAS100 and SPX500 M5 (2018–2026) it makes exactly the same trades as the validated engine (1,427/1,427 and 1,464/1,464).
+
+## One Atlas account, both bots (bots/)
+
+```
+python bots/atlas_combo.py --stage evaluation   # NBRO 1%/index + EMBER gold 1%
+python bots/atlas_combo.py --stage funded       # NBRO 0.25%/index + EMBER gold 0.5%, Protector shield 1.7%
+```
+Add `--btc` to put BTCUSD in EMBER at half of gold's risk. Results: `reports/combo_atlas.md`.
