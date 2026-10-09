@@ -1,6 +1,12 @@
 """
 EMBER — Expansion-Move Breakout, Edge-tested, Risk-capped
 =============================================================
+EMBER-24 (2026-10-09): USDJPY REMOVED as well. Default market: XAUUSD only. BTCUSD stays an opt-in candidate (--symbols XAUUSD BTCUSD).
+  BTCUSD re-test (Vantage M5 2018-2026, Atlas spread $67, swap -15%/yr): 680 trades, +0.037R a trade, z 1.4; first half +0.063R,
+  second half +0.011R. Atlas replay gold + BTCUSD was WORSE than gold alone (evaluation at 1.0%: pass 0.71 with 16% breached,
+  against 0.78 / 0% for gold alone; funded at 0.75%: 83% alive, ~$730/yr, against 100% / ~$945/yr), so BTCUSD does not start by default.
+  Gold alone, Atlas Access: evaluation 1.5% -> pass ~82%, ~4% breached, median ~69 trading days; funded 0.75% -> alive in every start
+  date, ~0.8 payouts and ~$950 a year on $50k.
 EMBER-23 (2026-10-09): JPN225 REMOVED. Markets: XAUUSD + USDJPY (default), BTCUSD as candidate (--symbols ... BTCUSD).
   Independent re-test (bot_audit/ember_bt.py, Vantage M5, Atlas-level spreads: gold $0.45, USDJPY 0.5 pip, USDJPY exit at 01:05):
     XAUUSD 2018-09 -> 2026-10: 579 trades, win 54%, +0.052R a trade, z 2.8; both halves positive; 2019-2020 (before the 2021+ data
@@ -266,7 +272,7 @@ try:
 except ImportError:
     MT5_AVAILABLE = False
 
-APP_VERSION = "2026-10-09.EMBER-23"
+APP_VERSION = "2026-10-09.EMBER-24"
 
 # ============================================================
 # STRATEGY PARAMETERS (validated — see header; not fit beyond the published 0.8/10 baseline)
@@ -295,13 +301,13 @@ SYMBOL_PROFILES = {
     # 2.0 pips at 01:00 (some wide ticks left, worst 10.7) and normal (1.70) from 01:05. So the exit waits until 01:05 = 65 minutes (30 minutes would have closed in the WORST spread).
     # Backtest, price drift of the wait included: +0.048R, z 3.1. Gold needs none: its market is closed at that hour and reopens at 01:00 ($0.26 against $0.22).
     "XAUUSD": dict(pip_size=0.10, spread_pips=3.0, digits=2, magic=990710, exit_delay_min=0),
-    "USDJPY": dict(pip_size=0.01, spread_pips=1.0, digits=3, magic=990720, exit_delay_min=65),
+    # USDJPY (magic 990720, exit_delay_min=65) was removed in EMBER-24: re-tested at +0.02R a trade, z 1.2.
     # CANDIDATE markets (see CANDIDATE_NOTES): they are NOT started unless asked for with --symbols. pip_size = 1 price unit (one dollar of Bitcoin, one index point); digits are corrected from the
     # broker's own symbol info at start-up. No exit delay: BTCUSD's spread is the same all day (no rollover widening). (JPN225 was removed in EMBER-23.)
     "BTCUSD": dict(pip_size=1.0, spread_pips=67.0, digits=2, magic=990730, exit_delay_min=0),
 }
 # The two proven markets are what a plain "py ember_app.py" runs. A market added later NEVER starts by itself (an old command line must not suddenly trade something new).
-DEFAULT_SYMBOLS = ["XAUUSD", "USDJPY"]
+DEFAULT_SYMBOLS = ["XAUUSD"]
 CANDIDATE_NOTES = {
     "BTCUSD": "CANDIDATE, not yet proven live: the same rule showed +0.067R a trade on 6.3 years of this broker's data (z 2.6) and CONFIRMED on older, never-seen years (+0.141R, z 3.0, 246 trades; long AND short positive). "
               "Costs measured at Atlas: spread $67 + overnight swap -15% a year = about 0.026R a trade. Crypto leverage at Atlas is reported as 1:2 in the evaluation and 1:1 funded (confirm it with Atlas). Trade it only after it has run on demo.",
@@ -330,7 +336,7 @@ def _preset(risk, dd_pct, daily_pct, target, cap, shield):
 # reviewed 27 Sep 2026). Evaluation: +3% target, 10% trailing equity drawdown, 5% daily. Funded: no target, 6% trailing equity, 3% daily, and Atlas Protector
 # (open loss >= 2% of the starting balance closes everything and cuts the profit split to 50% for good). The daily guard is set to ~60% of the daily limit.
 # The risk numbers come from this project's own measurements (header): 1.0% is the safe speed for the evaluation; 0.5% keeps the funded drawdown inside 6%.
-# EMBER-23: re-measured on gold + USDJPY 2018-2026 (bot_audit/ember_atlas.py): 1.5% passes faster with ~5% breaches; 0.75% funded survived every start date.
+# EMBER-24: re-measured on gold 2018-2026 (bot_audit/ember_atlas.py): 1.5% -> pass ~82%, ~4% breached; 0.75% funded survived every start date.
 PRESETS = {"evaluation": _preset(1.5, 10, 3.0, 3, 0, 0), "funded": _preset(0.75, 6, 1.8, 0, 1.5, 1.7)}
 
 
@@ -627,7 +633,7 @@ def _warn_once(key: str, msg: str, every: float = 600.0):
 
 # The same market can carry another name at another broker (Vantage calls the Nikkei JPN225ft; Atlas calls it JPN225). When the exact name is not there, verify_symbol() looks through
 # these and remembers the one it finds. The global --suffix still applies to every market that has no such alias.
-BROKER_NAME_ALTERNATIVES = {"BTCUSD": ["BTCUSD.r", "BTCUSDm"], "XAUUSD": ["XAUUSD.r", "XAUUSDm"], "USDJPY": ["USDJPY.r", "USDJPYm"]}
+BROKER_NAME_ALTERNATIVES = {"BTCUSD": ["BTCUSD.r", "BTCUSDm"], "XAUUSD": ["XAUUSD.r", "XAUUSDm"]}
 _BROKER_NAME: Dict[str, str] = {}
 
 
@@ -2058,10 +2064,10 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="panel-title">MARKETS — what this copy trades</div>
       <div style="font-size:12.5px; color:#9fb3cc; line-height:1.6;">
         This copy trades <b id="marketsLine2"></b> together, like ORB does with its pairs; each market has its own orders, state, risk % and Stop/Start button,
-        while the account guards below are shared. The two PROVEN markets, nothing tuned for them: USDJPY (14 years, 1,072 trades, +0.052R per trade, 12 of 14 years positive;
-        weaker in the last 8 years, about +0.04R) and gold (14.7 years, 1,106 trades, about +0.04R, z 2.8: the weaker of the two). All 43 Atlas instruments were screened with this
-        same rule and none passed the strict bar. BTCUSD is a CANDIDATE: confirmed on older years the screening had never seen (BTCUSD +0.14R, z 3.0); JPN225 was removed
-        but not yet proven live; they run only when the bot is started with them (--symbols XAUUSD USDJPY BTCUSD), so run it on demo first.
+        while the account guards below are shared. The default market is gold (re-tested 2018-2026 at Atlas costs: 579 trades, +0.052R a trade, z 2.8, 8 of 9 years positive).
+        USDJPY (+0.02R, z 1.2 on re-test) and JPN225 were removed. All 43 Atlas instruments were screened with this
+        same rule and none passed the strict bar. BTCUSD is an opt-in CANDIDATE: weaker at Atlas costs (+0.037R, z 1.4)
+        and it made the Atlas results worse when added to gold; it runs only when the bot is started with it (--symbols XAUUSD BTCUSD).
         On a small account the broker's smallest lot can risk more than the risk % below on a wide-stop market (gold on a 5K account): that market
         simply places no orders that day and says why in the Activity Log, while the others carry on.
       </div>

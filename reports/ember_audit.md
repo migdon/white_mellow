@@ -41,3 +41,21 @@ Gold alone gives evaluation 1.5% → pass 0.82, breach 0.04, 69 days, and funded
 
 **Caveat.** A position is open or closes on 88% of weekdays, but a trade closes on only ~0.3 days per market per day.
 "Profit every day" is not something this, or any real edge, delivers.
+
+## EMBER-24: USDJPY removed, BTCUSD tested
+
+**BTCUSD** (Vantage M5 2018-09 → 2026-10, swap −15%/yr):
+
+| Spread | Trades | Win | Avg/trade after swap | z | Halves |
+|---|---|---|---|---|---|
+| $17 (Vantage) | 680 | 48% | +0.068R | 2.59 | +0.111 / +0.025 |
+| **$67 (Atlas)** | 680 | 45% | **+0.037R** | **1.43** | +0.063 / +0.011 |
+
+**Atlas replay:**
+
+| | Evaluation at 1.0% | Funded at 0.75% |
+|---|---|---|
+| Gold alone | pass 0.78, breach 0.00 | alive 1.00, ~$945/yr |
+| Gold + BTCUSD | pass 0.71, breach 0.16 | alive 0.83, ~$730/yr |
+
+BTCUSD makes the account worse, so the default is gold alone. BTCUSD is opt-in only (`--symbols XAUUSD BTCUSD`).
