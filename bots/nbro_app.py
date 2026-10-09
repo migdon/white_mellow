@@ -264,6 +264,22 @@ MAX_ACCOUNT_DRAWDOWN_MODE = "static"
 # Open trades are still managed to their normal end; this only blocks fresh entries so a trade
 # opened after the target can't hand the profit back. Set with --profit-target.
 PROFIT_TARGET_PCT = None
+# Atlas PROTECTOR (Access FUNDED stage only): an OPEN loss of 2% of the starting balance closes everything and cuts the
+# profit split to 50% for good; a second time breaches the account. The shield acts a little before that line: when the
+# account's open (floating) loss reaches PROTECTOR_SHIELD_PCT of INITIAL_ACCOUNT_BALANCE, this bot closes ITS positions at
+# market and opens nothing new for the rest of the UTC day. 0 = off. Set by --preset atlas-funded or --protector-shield.
+PROTECTOR_SHIELD_PCT = 0.0
+_shield_state = {"day": None}
+# Presets measured on NBRO's own trades (Vantage M5, Sep 2018 - Oct 2026, replayed by noise_fx/atlas_sim.py):
+#   atlas-eval    1.0% per index: passes +3% in ~91% of start dates, median ~26 trading days, ~4% breached
+#   atlas-funded  0.35% per index: ~85-100% of accounts alive after a year, Protector never reached,
+#                 ~1-1.5 payouts a year (the "3 days >= +0.5%" payout rule is the bottleneck)
+ATLAS_PRESETS = {
+    "atlas-eval": {"risk": 1.0, "max_dd": 10.0, "daily_guard": 3.0, "dd_mode": "trailing",
+                   "profit_target": 3.0, "shield": 0.0, "max_open_risk": 2.0},
+    "atlas-funded": {"risk": 0.35, "max_dd": 6.0, "daily_guard": 1.8, "dd_mode": "trailing",
+                     "profit_target": None, "shield": 1.7, "max_open_risk": 0.7},
+}
 MAX_ACCOUNT_DRAWDOWN_SAFETY_BUFFER_PCT = 0.5   # stop entries this much %
                                     # of original balance BEFORE the real
                                     # hard floor, not exactly at it —
@@ -1987,7 +2003,7 @@ def _manage_open_trade(symbol, state, logs):
     if state.close_requested:
         res = close_partial(symbol, trade.ticket, pos.volume, trade.direction, comment="noise_manual")
         if _order_ok(res):
-            logs.append(f"[{symbol}] Closed at market — requested from the dashboard.")
+            logs.append(f"[{symbol}] Closed at market — " + ("Protector shield." if _shield_tripped_today() else "requested from the dashboard."))
             state.close_requested = False
             _finalize_closed_trade(symbol, state)
         else:
@@ -2198,6 +2214,36 @@ def _try_enter(symbol, state, bars, equity, logs):
         + (f"Band {ctx['LB']:.2f} - {ctx['UB']:.2f} | VWAP {ctx['vwap']:.2f}\n" if ctx else "")
         + "Noise Area momentum: exits by the rule at the next 30-min check, or at the session close")
     save_state()
+
+
+def _shield_tripped_today() -> bool:
+    return _shield_state["day"] == datetime.now(timezone.utc).date().isoformat()
+
+
+def check_protector_shield(account, logs) -> None:
+    """Close this bot's positions when the ACCOUNT's open loss reaches the shield line (see PROTECTOR_SHIELD_PCT).
+    Atlas measures the whole account, so floating losses of other bots / manual trades count too; this bot can only
+    close its own positions and says so when the rest of the loss is not its own."""
+    if PROTECTOR_SHIELD_PCT <= 0 or account is None or INITIAL_ACCOUNT_BALANCE <= 0:
+        return
+    floating = float(account.equity) - float(getattr(account, "balance", account.equity))
+    open_loss_pct = -floating / INITIAL_ACCOUNT_BALANCE * 100.0
+    if open_loss_pct < PROTECTOR_SHIELD_PCT:
+        return
+    first = not _shield_tripped_today()
+    _shield_state["day"] = datetime.now(timezone.utc).date().isoformat()
+    mine = [s for s, st in _states.items() if st.trade is not None]
+    for s in mine:
+        _states[s].close_requested = True
+    if first:
+        others = "" if mine else " None of the open positions are this bot's: close them yourself."
+        msg = (f"PROTECTOR SHIELD: account open loss {open_loss_pct:.2f}% of the starting balance reached "
+               f"{PROTECTOR_SHIELD_PCT:g}% (Atlas Protector fires at 2%). Closing {', '.join(mine) or 'nothing'}; "
+               f"no new entries until the next UTC day.{others}")
+        logs.append(msg)
+        send_telegram_alert("🛡 " + msg)
+
+
 def _process_symbol_inner(symbol, logs):
     global _last_equity, _last_balance
     state = _states[symbol]
@@ -2214,6 +2260,7 @@ def _process_symbol_inner(symbol, logs):
                 _account_guard_state.get("dd_high_water_mark", 0.0), account.equity)
     equity = account.equity if account else (_last_equity or INITIAL_ACCOUNT_BALANCE)
     _roll_account_day_if_needed(equity)
+    check_protector_shield(account, logs)
 
     # Flat in memory but MT5 holds a position of ours? Take it over (before anything else).
     if state.trade is None:
@@ -2228,6 +2275,8 @@ def _process_symbol_inner(symbol, logs):
         return          # waiting to see whether a timed-out order fills (the takeover above adopts it if it does)
     if symbol in DISABLED_SYMBOLS:
         return
+    if _shield_tripped_today():
+        return          # Protector shield tripped today: no new entries until the next UTC day
 
     bars = get_rates(symbol)
     if bars is None or len(bars) < 2:
@@ -3731,6 +3780,11 @@ if __name__ == "__main__":
     ap.add_argument("--suffix", default="", help="broker symbol suffix, e.g. .r, .pro or m (EURUSD -> EURUSD.r)")
     ap.add_argument("--plan", choices=sorted(PLAN_PRESETS), default=None,
                     help="prop plan preset (max drawdown-daily limit): instant=5-3, 4-8, 5-10; scales risk, caps and guards")
+    ap.add_argument("--preset", choices=sorted(ATLAS_PRESETS), default=None,
+                    help="Atlas 1-Step Access: atlas-eval (1.0%% per index, 10%% trailing, +3%% target) or "
+                         "atlas-funded (0.35%% per index, 6%% trailing, Protector shield 1.7%%); other flags override it")
+    ap.add_argument("--protector-shield", type=float, default=None,
+                    help="close this bot's positions at this %% account open loss (Atlas Protector = 2%%); 0 = off")
     ap.add_argument("--risk", type=float, default=None, help="risk %% per trade, applied to every pair")
     ap.add_argument("--max-trades-day", type=int, default=None, help="max trades per day, all symbols")
     ap.add_argument("--max-open-risk", type=float, default=None, help="max total open risk %% across all symbols")
@@ -3754,6 +3808,18 @@ if __name__ == "__main__":
     CONTROL_FILE = os.path.join(_script_dir(), f"nbro_control_{args.port}.json")
     STATUS_FILE = os.path.join(_script_dir(), f"nbro_status_{args.port}.json")
     _cli_keys = []
+    if args.preset:
+        _p = ATLAS_PRESETS[args.preset]
+        RISK_PCT = _p["risk"]
+        for _k in RISK_PCT_BY_SYMBOL:
+            RISK_PCT_BY_SYMBOL[_k] = _p["risk"]
+        MAX_ACCOUNT_DRAWDOWN_PCT, DAILY_LOSS_GUARD_PCT = _p["max_dd"], _p["daily_guard"]
+        MAX_ACCOUNT_DRAWDOWN_MODE, PROFIT_TARGET_PCT = _p["dd_mode"], _p["profit_target"]
+        PROTECTOR_SHIELD_PCT, MAX_CONCURRENT_RISK_PCT = _p["shield"], _p["max_open_risk"]
+        _cli_keys += ["risk_pct_by_symbol", "risk_pct", "daily_loss_guard_pct",
+                      "max_account_drawdown_pct", "max_concurrent_risk_pct"]
+    if args.protector_shield is not None:
+        PROTECTOR_SHIELD_PCT = max(0.0, args.protector_shield)
     if args.plan:
         apply_plan_preset(args.plan)
         _cli_keys += ["risk_pct_by_symbol", "risk_pct", "daily_loss_guard_pct",

@@ -15,7 +15,7 @@ import pandas as pd
 
 from noise_fx.noise_backtest import Spec, load_mt5_m5, run
 
-MARKETS = {"NAS100": 1.0, "SPX500": 0.5}     # spread in index points (Atlas to be measured)
+MARKETS = {"NAS100": 1.7, "SPX500": 0.6}     # spread in index points: Vantage median in the US session 2018-2026
 
 
 def excursions(df: pd.DataFrame, tr: pd.DataFrame, spread: float) -> pd.DataFrame:
@@ -24,8 +24,13 @@ def excursions(df: pd.DataFrame, tr: pd.DataFrame, spread: float) -> pd.DataFram
     mae, mfe = [], []
     for r in tr.itertuples():
         a = np.searchsorted(t, np.datetime64(r.entry_ts.tz_convert("UTC").tz_localize(None)))
-        b = np.searchsorted(t, np.datetime64(r.exit_ts.tz_convert("UTC").tz_localize(None)), side="right")
-        hi, lo = H[a:b].max(), L[a:b].min()
+        # bars the position was open through: from the entry bar up to (not incl.) the exit bar, because
+        # exits happen at the exit bar's open; a stopped trade's own bar only counts up to the stop (= ret)
+        b = np.searchsorted(t, np.datetime64(r.exit_ts.tz_convert("UTC").tz_localize(None)))
+        if b <= a:
+            b = a + 1 if r.reason != "stop" else a
+        hi = H[a:b].max() if b > a else r.entry
+        lo = L[a:b].min() if b > a else r.entry
         c = spread / r.entry
         if r.dir > 0:
             mae.append(min(lo / r.entry - 1 - c, r.ret)); mfe.append(max(hi / r.entry - 1 - c, r.ret, 0.0))
@@ -42,13 +47,16 @@ def main():
     ap.add_argument("--nas", default="NAS100")
     ap.add_argument("--spx", default="SPX500")
     ap.add_argument("--server-tz", default="ny+7")
+    ap.add_argument("--nas-spread", type=float, default=MARKETS["NAS100"])
+    ap.add_argument("--spx-spread", type=float, default=MARKETS["SPX500"])
     ap.add_argument("--out", default="nbro_trades.csv")
     a = ap.parse_args()
     frames = []
+    spreads = {"NAS100": a.nas_spread, "SPX500": a.spx_spread}
     for m, sym in (("NAS100", a.nas), ("SPX500", a.spx)):
         df = load_mt5_m5(os.path.join(a.data, f"{sym}_M5.csv"), a.server_tz)
-        tr = run(df, Spec(m, "America/New_York", "09:30", spread=MARKETS[m], stop_pct=1.0))
-        tr = excursions(df, tr, MARKETS[m])
+        tr = run(df, Spec(m, "America/New_York", "09:30", spread=spreads[m], stop_pct=1.0))
+        tr = excursions(df, tr, spreads[m])
         tr.insert(0, "market", m)
         frames.append(tr)
         print(f"{m}: {len(tr)} trades, avg {tr.ret.mean() * 100:+.4f}%, worst open {tr.mae.min() * 100:.2f}%")

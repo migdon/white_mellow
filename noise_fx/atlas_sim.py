@@ -25,9 +25,19 @@ import pandas as pd
 
 
 def daily_book(tr: pd.DataFrame) -> pd.DataFrame:
-    """Per UTC day: closed return, worst open (sum of MAE), best open (sum of MFE), per unit of notional per market."""
-    g = tr.groupby("utc_day")
-    return pd.DataFrame({"ret": g["ret"].sum(), "mae": g["mae"].sum(), "mfe": g["mfe"].sum()})
+    """Per UTC day, per unit of notional per market:
+      ret   closed result of the day
+      open  worst OPEN loss at one moment: one position per market at a time, so the worst trade of each
+            market, both assumed at their worst together (conservative)
+      low   lowest equity of the day vs its start: every losing trade already closed, plus the extra open
+            drawdown of the worst trade of each market on top (conservative)
+      high  highest equity of the day vs its start (same idea with winners and MFE)"""
+    t = tr.assign(loss=tr["ret"].clip(upper=0), gain=tr["ret"].clip(lower=0))
+    t = t.assign(extra_dn=t["mae"] - t["loss"], extra_up=t["mfe"] - t["gain"])
+    per = t.groupby(["utc_day", "market"]).agg(ret=("ret", "sum"), open=("mae", "min"), loss=("loss", "sum"),
+                                               dn=("extra_dn", "min"), gain=("gain", "sum"), up=("extra_up", "max"))
+    per["low"], per["high"] = per["loss"] + per["dn"], per["gain"] + per["up"]
+    return per.groupby("utc_day")[["ret", "open", "low", "high"]].sum()
 
 
 def all_days(tr: pd.DataFrame) -> pd.Index:
@@ -36,9 +46,12 @@ def all_days(tr: pd.DataFrame) -> pd.Index:
 
 
 def simulate(book: pd.DataFrame, days: pd.Index, notional: float, shield: float, start_i: int,
-             eval_cap=252, funded_len=252):
+             eval_cap=252, funded_len=252, funded_notional=None):
     R = book.reindex(days).fillna(0.0)
-    ret, mae, mfe = R["ret"].values * notional, R["mae"].values * notional, R["mfe"].values * notional
+    ret, mae, mfe = R["ret"].values * notional, R["low"].values * notional, R["high"].values * notional
+    fn = notional if funded_notional is None else funded_notional
+    fret, fmae, fmfe = R["ret"].values * fn, R["low"].values * fn, R["high"].values * fn
+    fopen = R["open"].values * fn
     n = len(days)
     # ---- evaluation (amounts as a fraction of the start size)
     bal, hwm, i, passed, ev_days = 1.0, 1.0, start_i, False, 0
@@ -62,8 +75,8 @@ def simulate(book: pd.DataFrame, days: pd.Index, notional: float, shield: float,
     cyc_days, cyc_good, cyc_best, n_pay = 0, 0, 0.0, 0
     breached, shield_hits = False, 0
     while i < n and f_days < funded_len:
-        day_ret, low = ret[i], bal * (1 + mae[i])
-        open_loss = -bal * mae[i]
+        day_ret, low = fret[i], bal * (1 + fmae[i])
+        open_loss = -bal * fopen[i]
         if shield > 0 and open_loss >= shield:              # our own shield closes first
             day_ret = -shield / bal; low = bal - shield; shield_hits += 1
         elif open_loss >= 0.02:                              # Atlas Protector
@@ -72,7 +85,7 @@ def simulate(book: pd.DataFrame, days: pd.Index, notional: float, shield: float,
                 breached = True; break
         if low <= hwm - 0.06 or low <= bal * (1 - 0.03):
             breached = True; break
-        hwm = max(hwm, bal * (1 + mfe[i]))
+        hwm = max(hwm, bal * (1 + fmfe[i]))
         pnl = bal * day_ret
         bal += pnl
         hwm = max(hwm, bal)
@@ -94,6 +107,7 @@ def main():
     ap.add_argument("--trades", default="nbro_trades.csv")
     ap.add_argument("--size", type=float, default=50000)
     ap.add_argument("--shield", type=float, default=1.7, help="our close-all line, %% open loss (0 = off)")
+    ap.add_argument("--eval-risk", type=float, nargs="*", default=[0.75, 1.0])
     a = ap.parse_args()
     tr = pd.read_csv(a.trades, parse_dates=["utc_day"])
     tr["utc_day"] = tr["utc_day"].dt.date
@@ -116,6 +130,19 @@ def main():
         paid = np.mean([r["paid"] * a.size * 252 / max(r["funded_days"], 1) for r in P]) if P else 0.0
         print(f"{risk:>7.2f}%{p_pass:>7.2f}{p_breach:>8.2f}{med:>9.0f}{f_ok:>10.2f}{prot:>10.2f}"
               f"{pays:>11.1f}{paid:>11,.0f}{p_pass * paid:>14,.0f}")
+    print("\nSEPARATE RISK: evaluation at --eval-risk, then funded at each risk below")
+    print(f"{'eval':>6}{'funded':>8}{'funded ok':>10}{'protector':>10}{'shield/yr':>10}{'payouts/yr':>11}{'$ paid/yr':>11}{'$ per attempt':>14}")
+    for er in a.eval_risk:
+        for fr in (0.1, 0.15, 0.2, 0.25, 0.35, 0.5):
+            res = [simulate(book, days, er, a.shield / 100, s, funded_notional=fr) for s in starts]
+            P = [r for r in res if r["passed"]]
+            p_pass = len(P) / len(res)
+            f_ok = np.mean([not r["funded_breach"] for r in P])
+            prot = np.mean([r["protector"] > 0 for r in P])
+            sh = np.mean([r["shield_hits"] * 252 / max(r["funded_days"], 1) for r in P])
+            pays = np.mean([r["payouts"] * 252 / max(r["funded_days"], 1) for r in P])
+            paid = np.mean([r["paid"] * a.size * 252 / max(r["funded_days"], 1) for r in P])
+            print(f"{er:>5.2f}%{fr:>7.2f}%{f_ok:>10.2f}{prot:>10.2f}{sh:>10.1f}{pays:>11.1f}{paid:>11,.0f}{p_pass * paid:>14,.0f}")
     print("\npass = reached +3% within a year; breach = failed the evaluation; med days = trading days to pass;"
           "\nfunded ok = still alive after a year funded; protector = share hit by Atlas Protector at least once;"
           "\n$ per attempt = pass x payouts in the first funded year (before the Access fee).")
