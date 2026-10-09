@@ -49,6 +49,9 @@ SUFFIX = ""             # broker symbol suffix, normally empty at Atlas
 HUB_PORT = 8800        # dashboards: account #1 http://127.0.0.1:8800, #2 :8801, #3 :8802 ... (NBRO + EMBER of that account)
 NBRO_FIRST_PORT = 8777  # internal ports the bots use behind the hub (you don't need to open these)
 EMBER_FIRST_PORT = 8710
+# Telegram alerts (optional): from @BotFather (token) and @userinfobot (your chat id). Empty = no Telegram.
+TELEGRAM_BOT_TOKEN = ""
+TELEGRAM_CHAT_ID = ""
 # ======================================================================================================
 
 STAGES = {
@@ -76,6 +79,36 @@ def unpack_bots():
         if not os.path.exists(path) or open(path, "rb").read() != src:
             with open(path, "wb") as f:
                 f.write(src)
+
+
+def setup_telegram():
+    """Write the Telegram settings where both bots read them (bots/nbro_telegram_config.json, ember_telegram_config.json).
+    Nothing is written when the token is empty, so a config file made by hand is left as it is."""
+    import json
+    if not (TELEGRAM_BOT_TOKEN.strip() and str(TELEGRAM_CHAT_ID).strip()):
+        return False
+    cfg = {"enabled": True, "bot_token": TELEGRAM_BOT_TOKEN.strip(), "chat_id": str(TELEGRAM_CHAT_ID).strip()}
+    os.makedirs(RUN_DIR, exist_ok=True)
+    for name in ("nbro_telegram_config.json", "ember_telegram_config.json"):
+        with open(os.path.join(RUN_DIR, name), "w") as f:
+            json.dump(cfg, f)
+    return True
+
+
+def test_telegram():
+    import json
+    import urllib.request
+    if not setup_telegram():
+        raise SystemExit("Put TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the settings first.")
+    req = urllib.request.Request(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN.strip()}/sendMessage",
+                                 data=json.dumps({"chat_id": str(TELEGRAM_CHAT_ID).strip(),
+                                                  "text": "Atlas Bot: Telegram test OK"}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=15)
+        print("Sent. Check Telegram for 'Atlas Bot: Telegram test OK'.")
+    except Exception as e:
+        print(f"Telegram test FAILED: {e}\n - token wrong?  - chat id wrong?  - did you press Start in your bot's chat first?")
 
 
 def commands(i, acc):
@@ -220,7 +253,10 @@ def stop(p):
 def main():
     ap = argparse.ArgumentParser(description="NBRO + EMBER on one or several Atlas accounts, from one file")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--test-telegram", action="store_true", help="send one test message and exit")
     a = ap.parse_args()
+    if a.test_telegram:
+        return test_telegram()
     if not ACCOUNTS:
         raise SystemExit("ACCOUNTS is empty: add your account(s) at the top of atlas_bot.py")
     plan = [commands(i, acc) for i, acc in enumerate(ACCOUNTS)]
@@ -235,6 +271,8 @@ def main():
     if problems:
         raise SystemExit("Fix these first:\n  - " + "\n  - ".join(problems))
     unpack_bots()
+    print("Telegram alerts: " + ("ON (settings written for both bots)" if setup_telegram() else
+                                 "not set in the settings (an existing bots telegram file, if any, is still used)"))
     if a.dry_run:
         for label, _, nbro, ember in plan:
             print(f"\n[{label}] " + " ".join(nbro) + f"\n[{label}] " + " ".join(ember))

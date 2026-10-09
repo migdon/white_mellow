@@ -48,6 +48,14 @@ SUFFIX = ""              # broker symbol suffix (empty at Atlas)
 HUB_PORT = 8800          # dashboard of the 1st account; the next accounts use 8801, 8802, ...
 NBRO_FIRST_PORT = 8777   # internal ports of the bots behind the dashboards
 EMBER_FIRST_PORT = 8710
+
+# ---- Telegram alerts (optional) ----
+# 1. In Telegram, talk to @BotFather -> /newbot -> copy the TOKEN it gives you.
+# 2. Open YOUR new bot's chat and press Start.
+# 3. Talk to @userinfobot -> copy your Id (a number).
+# 4. Put both here, then test:  python atlas_bot.py --test-telegram
+TELEGRAM_BOT_TOKEN = ""
+TELEGRAM_CHAT_ID = ""
 '''
 
 README = """ATLAS BOT — NBRO (NAS100 + SPX500) + EMBER (gold)
@@ -71,6 +79,14 @@ PATAKBUHIN
   2. Subukan muna (walang trade):   python atlas_bot.py --dry-run
   3. I-double click ang start_atlas_bot.bat
   4. Dashboard sa browser:  Atlas1 http://127.0.0.1:8800   Atlas2 :8801   Atlas3 :8802 ...
+
+TELEGRAM (para may alert sa phone)
+  1. Sa Telegram, i-message ang @BotFather -> /newbot -> kopyahin ang TOKEN.
+  2. Buksan ang chat ng bago mong bot at pindutin ang Start.
+  3. I-message ang @userinfobot -> kopyahin ang Id mo (numero).
+  4. Ilagay sa config.py:  TELEGRAM_BOT_TOKEN = "..."   TELEGRAM_CHAT_ID = "..."
+  5. Subukan:  python atlas_bot.py --test-telegram
+  6. I-restart ang bot. Bawat alert ay may [Atlas1-NBRO], [Atlas2-EMBER] ... para alam mo kung aling account.
 
 KAPAG PUMASA KA
   Sa config.py, palitan ang "evaluation" ng "funded" para sa account na iyon, tapos i-restart.
@@ -100,13 +116,14 @@ Settings are in config.py. The two bots are the files in the bots folder. Ctrl+C
 All accounts take the SAME trades: they win and lose together.
 """''', 1)
     s = re.sub(r"# =+ EDIT THIS\n.*?\n# =+\n",
-               "from config import ACCOUNTS, EMBER_FIRST_PORT, HUB_PORT, NBRO_FIRST_PORT, SUFFIX\n", s, count=1, flags=re.S)
+               "from config import (ACCOUNTS, EMBER_FIRST_PORT, HUB_PORT, NBRO_FIRST_PORT, SUFFIX,  # noqa: F401\n"
+               "                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)\n", s, count=1, flags=re.S)
     s = re.sub(r"# ---- the two bots, unchanged.*?\ndef unpack_bots\(\):.*?\n\n\n", "", s, count=1, flags=re.S)
     s = s.replace('RUN_DIR = os.path.join(HERE, "atlas_bot_files")', 'RUN_DIR = os.path.join(HERE, "bots")')
-    s = s.replace("    unpack_bots()\n", '''    for f in ("nbro_app.py", "ember_app.py"):
+    s = s.replace("    unpack_bots()\n    print(", '''    for f in ("nbro_app.py", "ember_app.py"):
         if not os.path.exists(os.path.join(RUN_DIR, f)):
             raise SystemExit(f"bots\\\\{f} is missing: keep the whole AtlasBot folder together.")
-''')
+    print(''')
     s = s.replace('raise SystemExit("ACCOUNTS is empty: add your account(s) at the top of atlas_bot.py")',
                   'raise SystemExit("ACCOUNTS is empty: add your account(s) in config.py")')
     for mod in ("import base64\n", "import hashlib\n", "import zlib\n"):
