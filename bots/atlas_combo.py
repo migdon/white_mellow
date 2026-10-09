@@ -50,7 +50,8 @@ def build(args):
 
 def main():
     ap = argparse.ArgumentParser(description="Run NBRO + EMBER together on one Atlas Access account")
-    ap.add_argument("--stage", choices=sorted(STAGES), required=True)
+    ap.add_argument("--stage", choices=sorted(STAGES), default=None,
+                    help="evaluation or funded; asked for when missing (e.g. started with VS Code's Run button)")
     ap.add_argument("--btc", action="store_true", help="add BTCUSD to EMBER (half of gold's risk)")
     ap.add_argument("--label", default="")
     ap.add_argument("--mt5-path", default=None)
@@ -59,6 +60,14 @@ def main():
     ap.add_argument("--ember-port", type=int, default=8710)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
+    if a.stage is None:
+        # deliberately NOT defaulting: evaluation risk on a funded account could breach it
+        print("Which stage is this Atlas account in?\n  1 = evaluation (passing the +3% target)\n  2 = funded")
+        while a.stage is None:
+            ans = input("Type 1 or 2 and press Enter: ").strip().lower()
+            a.stage = {"1": "evaluation", "2": "funded", "evaluation": "evaluation", "funded": "funded"}.get(ans)
+        if not a.label:
+            a.label = input("Account label for alerts (Enter to skip): ").strip()
 
     cmds = build(a)
     for name, c in zip(("NBRO", "EMBER"), cmds):
