@@ -13,3 +13,8 @@ Costs: bid data + spread (NAS100 1.7, XAUUSD 0.45, EURUSD 0.00012). Data Sep 201
 
 PASS (per market): mean net R > 0 with t >= 2.4 (Bonferroni over 3 markets), both halves > 0, still > 0 at 2x spread.
 Information only, cannot rescue a FAIL: target 1R / 3R, all hours, entry on a retest of the IFVG zone (limit, 6 bars), M15 bars.
+
+## Addendum (before running): more FX + the London kill zone
+Same rules on GBPUSD (spread 0.00015) and USDJPY (0.008). PASS for these two: t >= 2.4, both halves > 0, > 0 at 2x spread.
+Information only, for all FX + gold: London kill zone 02:00-05:00 New York (server 09-12), and M15 / H1 bars (bigger stops,
+so the spread is a smaller part of 1R). 6 markets x several variants: anything short of t >= 3 is treated as noise.

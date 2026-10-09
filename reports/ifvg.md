@@ -14,3 +14,13 @@ all hours -0.078 / -0.165 / -0.293; retest (limit) entry -0.050 / -0.078 / -0.13
 Without any spread: NAS100 +0.035R (t 1.5), gold +0.017R (t 0.8) — a small gross tendency that the spread more than eats,
 because the stops are tight (a few points on M5) and the spread is a large share of 1R.
 The NY morning kill zone is clearly better than trading all hours, but no version is positive after costs.
+
+## More FX, London kill zone, higher timeframes (addendum) — still FAIL
+Mean R per trade (t), M5 NY morning = primary:
+| Market | M5 NY (primary) | M5 London 02-05 NY | M15 NY | M15 London | H1 London+NY |
+|---|---|---|---|---|---|
+| GBPUSD | -0.122 (-5.7) | -0.135 | -0.060 | -0.040 | +0.010 (t 0.3, 91/yr) |
+| USDJPY | -0.066 (-3.1) | -0.046 | -0.026 | -0.007 | +0.012 (t 0.3, 70/yr) |
+| EURUSD | -0.118 (-5.6) | -0.155 | -0.089 | -0.091 | +0.005 (t 0.1, 87/yr) |
+| XAUUSD | -0.079 (-3.7) | -0.140 | -0.048 | -0.126 | -0.134 (-3.5) |
+Bigger timeframes shrink the loss (the spread is a smaller part of the stop) but only reach zero, never a usable edge.

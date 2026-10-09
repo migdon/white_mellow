@@ -5,7 +5,8 @@ import pandas as pd
 
 D = "/tmp/claude-0/-home-user-white-mellow/17c12a63-a643-5bcb-ae08-5abd467656cb/scratchpad"
 FILES = {"NAS100": (f"{D}/realdata/unz/NAS100.r_M5.csv", 1.7), "XAUUSD": (f"{D}/gold/unz/XAUUSD_M5.csv", 0.45),
-         "EURUSD": (f"{D}/fx/EURUSD_M5.csv", 0.00012)}
+         "EURUSD": (f"{D}/fx/EURUSD_M5.csv", 0.00012), "GBPUSD": (f"{D}/fx/GBPUSD_M5.csv", 0.00015),
+         "USDJPY": (f"{D}/fx/USDJPY_M5.csv", 0.008)}
 
 
 def load(path, tf="5min"):
@@ -102,3 +103,7 @@ if __name__ == "__main__":
         print(f"{m} all hours     {stats(run(d, sp, hours=None))}")
         print(f"{m} retest entry  {stats(run(d, sp, retest=True))}")
         print(f"{m} M15           {stats(run(load(p, '15min'), sp, live=8))}", flush=True)
+        if True:
+            print(f"{m} London 9-12   {stats(run(d, sp, hours=(9, 12)))}")
+            print(f"{m} M15 London    {stats(run(load(p, '15min'), sp, live=8, hours=(9, 12)))}")
+            print(f"{m} H1 NY+London  {stats(run(load(p, '60min'), sp, live=4, hours=(9, 19)))}", flush=True)
