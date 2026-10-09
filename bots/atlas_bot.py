@@ -119,15 +119,18 @@ def _hub_page(acc):
     label, keys = HUB_ACCOUNTS[acc]
     tabs = "".join(f'<button onclick="show(\'{k}\')" id="t-{k.replace("/", "-")}">{HUB_TARGETS[k][0]}</button>' for k in keys)
     first = keys[0]
-    others = " ".join(f'<a href="http://127.0.0.1:{HUB_PORT + j}/"{" class=cur" if j == acc else ""}>{lb}</a>'
-                      for j, (lb, _) in enumerate(HUB_ACCOUNTS)) if len(HUB_ACCOUNTS) > 1 else ""
+    others = ('<span class="acc">Accounts:' + "".join(
+        f'<a href="http://127.0.0.1:{HUB_PORT + j}/"{" class=cur" if j == acc else ""}>{lb} :{HUB_PORT + j}</a>'
+        for j, (lb, _) in enumerate(HUB_ACCOUNTS)) + "</span>")
     return f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{label} - Atlas Bot</title><style>
 body{{margin:0;font-family:system-ui,sans-serif;background:#0f1115;color:#e6e6e6}}
 header{{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 12px;background:#171a21;border-bottom:1px solid #2a2f3a}}
 header b{{margin-right:10px}} button{{background:#232836;color:#e6e6e6;border:1px solid #343b4d;border-radius:6px;padding:6px 12px;cursor:pointer}}
 button.on{{background:#2f6fed;border-color:#2f6fed}} .dead{{color:#ff6b6b}} #st{{margin-left:auto;font-size:12px;color:#9aa3b2}}
-a{{color:#9aa3b2;margin-left:8px;font-size:13px}} a.cur{{color:#fff;font-weight:600}}
+.acc{{font-size:12px;color:#9aa3b2;margin-left:12px}}
+.acc a{{display:inline-block;margin-left:6px;padding:5px 10px;border:1px solid #343b4d;border-radius:6px;background:#232836;color:#e6e6e6;text-decoration:none;font-size:13px}}
+.acc a.cur{{background:#1f8a4c;border-color:#1f8a4c;color:#fff;font-weight:600}}
 iframe{{border:0;width:100%;height:calc(100vh - 52px);background:#fff}}</style></head><body>
 <header><b>{label}</b>{tabs}<span id="st"></span>{others}</header><iframe id="f"></iframe>
 <script>
