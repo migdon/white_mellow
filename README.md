@@ -31,3 +31,17 @@ python run_research.py --mt5 mt5_export --suffix ""
 
 Sa mode na `--mt5`, kinakalkula ang swap markup ng broker mula sa `swap_long` at `swap_short`
 (markup ≈ −(long + short)/2), at iyon ang ginagamit sa cost model.
+
+## NBRO → FX (noise_fx/)
+
+Sinusubok kung gagana ang Noise-Area rule ng NBRO sa 9 na FX pair. Ang protocol at pass rule ay isinulat
+**bago** makita ang data: [`noise_fx/PROTOCOL.md`](noise_fx/PROTOCOL.md).
+
+```bash
+# sa PC na may MT5 (Tools > Options > Charts > Max bars in chart = Unlimited, tapos i-restart ang MT5)
+python -m noise_fx.export_m5 --out m5_export --from 2012-01-01
+# kahit saan
+python -m noise_fx.run_fx --data m5_export
+python -m noise_fx.tests.test_sanity
+python -m noise_fx.tests.test_equivalence_nbro path/to/nbro_app.py   # parehong trade ba ang ginagawa ng engine at ng NBRO?
+```
