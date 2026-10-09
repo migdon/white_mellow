@@ -99,7 +99,9 @@ PAALALA
 """
 
 BAT = ('@echo off\r\nREM Runs atlas_bot.py and starts it again if it ever stops. Close this window to stop for good.\r\n'
-       'cd /d "%~dp0"\r\n:loop\r\necho %date% %time% starting atlas_bot.py\r\npython atlas_bot.py\r\n'
+       'cd /d "%~dp0"\r\nset PY=python\r\nwhere python >nul 2>nul || set PY=py\r\n'
+       '%PY% --version >nul 2>nul || (echo Python is not installed: get the 64-bit Python from python.org and tick "Add python.exe to PATH". & pause & exit /b 1)\r\n'
+       ':loop\r\necho %date% %time% starting atlas_bot.py\r\n%PY% atlas_bot.py\r\n'
        'echo %date% %time% atlas_bot.py stopped - restarting in 60 seconds (close this window to stop for good)\r\n'
        'timeout /t 60 /nobreak\r\ngoto loop\r\n')
 
