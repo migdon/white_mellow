@@ -9,3 +9,15 @@
 
 RSI(2) trades about 9 times a year per index. It holds a few days and earns small per trade.
 It is not yet combined with NBRO + EMBER in the Atlas replay.
+
+## RSI(2) < 20 on FX, gold, BTC (pre-registered; A = long only, B = long + short at 80; PASS t >= 2.7, family of 10)
+
+| Market | A: t | A: total | B: t | B: total |
+|---|---|---|---|---|
+| EURUSD | −0.71 | −8.4% | +0.20 | +4.1% |
+| GBPUSD | −0.64 | −8.6% | −1.24 | −25.9% |
+| USDJPY | +0.36 | +7.9% | +0.69 | +19.5% |
+| XAUUSD | +0.49 | +16.5% | −0.92 | −38.5% |
+| BTCUSD | +0.45 | +38.7% | −0.58 | −65.8% |
+
+**0 of 10 pass.** RSI(2) works on US stock indices only (SPX500, NAS100), as the literature reports.
