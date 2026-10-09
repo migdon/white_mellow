@@ -18,7 +18,7 @@ def load(path):
     return d.reset_index(drop=True), b
 
 
-def run(m5, b, spread, leg_min=3, zone=0.3, mode="trend", stop_after_loss=True):
+def run(m5, b, spread, leg_min=3, zone=0.3, mode="trend", stop_after_loss=True, fib=None, hours=None, loose=False):
     O, H, L, C = (b[c].values for c in ("open", "high", "low", "close"))
     T = b["time"].values
     n = len(b)
@@ -33,6 +33,12 @@ def run(m5, b, spread, leg_min=3, zone=0.3, mode="trend", stop_after_loss=True):
     for i in range(1, n):
         run_bear[i] = run_bear[i - 1] + 1 if bear[i] else 0
         run_bull[i] = run_bull[i - 1] + 1 if bull[i] else 0
+    if loose:   # looser "leg": 3 of the last 4 candles one way and a net move of >= 1.5 ATR (pullbacks allowed)
+        dn, up = (C < O).astype(int), (C > O).astype(int)
+        for i in range(5, n):
+            mv = (C[i - 4] - C[i]) / atr[i] if atr[i] > 0 else 0
+            run_bear[i] = 4 if dn[i - 3:i + 1].sum() >= 3 and mv >= 1.5 else 0
+            run_bull[i] = 4 if up[i - 3:i + 1].sum() >= 3 and -mv >= 1.5 else 0
     sl_idx = [j for j in range(K, n - K) if L[j] == L[j - K:j + K + 1].min()]
     sh_idx = [j for j in range(K, n - K) if H[j] == H[j - K:j + K + 1].max()]
     m5t = m5["time"].values
@@ -61,6 +67,17 @@ def run(m5, b, spread, leg_min=3, zone=0.3, mode="trend", stop_after_loss=True):
             if not lv or min(abs(ext - x) for x in lv) > zone * atr[r]:
                 continue
             trig = H[r] if side == 1 else L[r]
+            if fib is not None:     # video: take it only if 1R is reachable inside the leg's Fibonacci retracement (0.5 / 0.618)
+                if side == 1:
+                    top = H[s:r].max(); risk0 = trig + spread - ext
+                    if trig + spread + risk0 > ext + fib * (top - ext):
+                        continue
+                else:
+                    bot = L[s:r].min(); risk0 = ext - trig
+                    if trig - risk0 < ext - fib * (ext - bot):
+                        continue
+            if hours is not None and not hours[0] <= pd.Timestamp(T[r + 1]).hour < hours[1]:
+                continue
             # fill during bar r+1 on M5
             a, z = pos_of[r + 1], pos_of[r + 2] if r + 2 < n else len(m5t)
             fill = None

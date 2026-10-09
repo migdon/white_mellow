@@ -29,3 +29,11 @@ F3 entry during London/NY (server 10:00-23:00) · F4 reversal candle is a pin/ha
 F5 reversal candle tick volume > 1.5x its 20-bar average · F6 leg extreme within 0.3 ATR of a $10 round number.
 Screen: each filter keeps the subset of the primary trades it allows (the day/position sequence is not re-run).
 A filter PASSES only with mean R > 0, t >= 2.64 (Bonferroni over 6), both halves > 0. Otherwise no filter is added.
+
+## Addendum 2 (2026-10-09, before running): the video's Fibonacci rule
+Re-reading the video: "pag walang 1 [1R] dito sa range niya na hanggang 5 [0.5 Fib], hindi ko siya ite-take" — the trader traces
+the leg with Fibonacci and only takes the trade if the 1R target sits inside the leg's 0.5 retracement (0.618 for those who use it).
+The first test left this out. New primary "video-full" = primary rules + this filter (0.5). PASS: gold mean R > 0, t >= 2.0,
+both halves > 0, still > 0 at 2x spread. Information only: 0.618, and 0.5 + London/NY hours; NAS100 and EURUSD with 0.5.
+Also information only (the strict leg gave ~5 trades/yr with the Fib rule, far fewer than the video's several a day):
+a looser leg = 3 of the last 4 candles one way with a net move >= 1.5 ATR, zone 0.5 ATR, with and without the 0.5 Fib rule.

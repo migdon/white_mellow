@@ -30,3 +30,16 @@ Caveat: the video's zones and "clean candles" are judged by eye; this is one exa
 No filter passes; none turns the mean positive. London/NY hours cut the loss the most (the Asian-session setups lose -0.44R),
 so snr_app.py got an optional --london-ny switch. Stronger-looking zones (more touches, previous-day levels, round numbers,
 hammers, volume) did NOT win more often.
+
+## The video's Fibonacci rule (addendum 2): FAIL, and it makes it worse
+"Take it only if 1R fits inside the leg's 0.5 retracement":
+| Gold version | Trades/yr | Win % | Mean R | t |
+|---|---|---|---|---|
+| strict leg + Fib 0.5 (new primary) | 5 | 26 | -0.46 | -2.85 |
+| strict leg + Fib 0.618 | 9 | 34 | -0.25 | -1.90 |
+| strict leg + Fib 0.5 + London/NY | 3 | 36 | -0.23 | -1.00 |
+| loose leg (3 of 4 candles, >= 1.5 ATR), zone 0.5 | 234 | 38 | -0.14 | -5.48 |
+| loose leg + Fib 0.5 | 38 | 32 | -0.30 | -5.02 |
+| loose leg + Fib 0.5 + London/NY | 23 | 36 | -0.22 | -2.78 |
+NAS100 strict + Fib 0.5: -0.25R (t -2.1); EURUSD: -0.49R (t -4.1).
+The Fib rule keeps the trades whose stop is small next to the leg, and small stops are hit by ordinary noise more often.
