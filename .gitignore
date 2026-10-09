@@ -4,3 +4,4 @@ mt5_export/
 reports/*_daily.csv
 noise_fx/tests/_synth.csv
 m5_export/
+bots/dist/
