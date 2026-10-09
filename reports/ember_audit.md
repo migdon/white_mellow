@@ -59,3 +59,12 @@ Gold alone gives evaluation 1.5% → pass 0.82, breach 0.04, 69 days, and funded
 | Gold + BTCUSD | pass 0.71, breach 0.16 | alive 0.83, ~$730/yr |
 
 BTCUSD makes the account worse, so the default is gold alone. BTCUSD is opt-in only (`--symbols XAUUSD BTCUSD`).
+
+## Intraday EMBER on gold (PROTOCOL_EMBER_INTRADAY.md): FAIL
+
+| Period | Trades | Per day | Avg/trade ($0.45) | z | At $0.90 |
+|---|---|---|---|---|---|
+| 8h | 1,673 | 0.80 | −0.002R | −0.14 | −0.019R |
+| 4h | 3,240 | 1.56 | −0.016R | −1.58 | −0.041R |
+
+The rule's edge on gold exists only on the daily horizon. Shorter periods trade more and earn nothing.
