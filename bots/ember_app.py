@@ -1,6 +1,11 @@
 """
 EMBER — Expansion-Move Breakout, Edge-tested, Risk-capped
 =============================================================
+EMBER-26 (2026-10-10), from the user's live log (Vantage, EMBER-20..25):
+  - The broker clock was read from a STALE tick right after MT5 reconnected (logged UTC-6, UTC-2, UTC+2 for a minute before UTC+3).
+    A reading that is not within 3 minutes of a whole hour is now ignored (a live tick always is).
+  - New warning (log + Telegram, hourly): EMBER pending orders or positions on markets this copy no longer trades (e.g. a JPN225
+    short or USDJPY / BTCUSD orders left by EMBER-22). Nothing manages them, so delete / close them in MT5. The bot never touches them.
 EMBER-24 (2026-10-09): USDJPY REMOVED as well. Default market: XAUUSD only. BTCUSD stays an opt-in candidate (--symbols XAUUSD BTCUSD).
   BTCUSD re-test (Vantage M5 2018-2026, Atlas spread $67, swap -15%/yr): 680 trades, +0.037R a trade, z 1.4; first half +0.063R,
   second half +0.011R. Atlas replay gold + BTCUSD was WORSE than gold alone (evaluation at 1.0%: pass 0.71 with 16% breached,
@@ -272,7 +277,7 @@ try:
 except ImportError:
     MT5_AVAILABLE = False
 
-APP_VERSION = "2026-10-09.EMBER-25"
+APP_VERSION = "2026-10-10.EMBER-26"
 
 # ============================================================
 # STRATEGY PARAMETERS (validated — see header; not fit beyond the published 0.8/10 baseline)
@@ -930,6 +935,7 @@ def poll_all() -> None:
             _last_foreign_check = time.time()
             try:
                 check_foreign_ember_orders()
+                check_orphaned_ember_orders()
             except Exception as e:
                 _log(f"Check for foreign EMBER orders failed (bot keeps running): {type(e).__name__}: {e}")
     finally:
@@ -1312,8 +1318,14 @@ def _broker_offset_seconds() -> int:
     try:
         tick = mt5.symbol_info_tick(_bn(SYMBOL))
         if tick is not None:
-            h = round((tick.time - time.time()) / 3600.0)
-            if abs(h) <= 14:
+            raw = (tick.time - time.time()) / 3600.0
+            h = round(raw)
+            if abs(raw - h) > 0.05:
+                # A live tick sits within a few minutes of a whole-hour offset; this one does not, so it is an OLD tick (MT5 just
+                # reconnected, or the market is closed). Seen live: UTC-6 / UTC-2 readings right after a reconnect, corrected a minute later.
+                _warn_once("tzstale2", f"Ignored a broker clock reading of {raw:+.2f}h: the last tick is old (just reconnected, or market closed). "
+                                       f"Keeping UTC{_broker_offset_cache // 3600:+d}.", every=6 * 3600)
+            elif abs(h) <= 14:
                 new = int(h) * 3600
                 if not _broker_offset_known:
                     _log(f"Broker server clock measured as UTC{h:+d} (from the live tick; it times the news windows and the daily-loss day).")
@@ -1491,6 +1503,43 @@ def check_foreign_ember_orders() -> None:
         _log(f"WARNING: {name} has {len(stray)} pending order(s)/position(s) marked EMBER that this bot does NOT manage ({what}): left by an older version, or by another copy that is running. "
              f"If nothing manages them, nobody closes a filled one the next day and it can double a trade. If you do not want them, delete them in MT5 (Trade tab, right-click, Delete). "
              f"This bot has not touched them.", sym=name)
+
+
+RETIRED_MAGICS = {990720: "USDJPY (removed in EMBER-24)", 990740: "JPN225 (removed in EMBER-23)"}
+_orphan_warned: Dict[str, float] = {}
+
+
+def check_orphaned_ember_orders() -> None:
+    """Warn (never touch) about EMBER pending orders / positions on markets this copy does NOT trade: e.g. a JPN225 or USDJPY trade
+    left open by an older version, or BTCUSD orders after BTCUSD was dropped from --symbols. Nothing manages them: a pending order
+    can still fill, and a position is only closed by its stop-loss (no next-day exit)."""
+    if not MT5_AVAILABLE:
+        return
+    active = {_bn(n) for n in ACTIVE_SYMBOLS}
+    magics = {p["magic"] for p in SYMBOL_PROFILES.values()} | set(RETIRED_MAGICS)
+    try:
+        items = list(mt5.orders_get() or []) + list(mt5.positions_get() or [])
+    except Exception:
+        return
+    orphans = [x for x in items if getattr(x, "symbol", None) not in active and
+               (getattr(x, "magic", None) in magics or str(getattr(x, "comment", "") or "").lower().startswith("ember"))]
+    if not orphans:
+        return
+    key = str(sorted(int(getattr(x, "ticket", 0)) for x in orphans))
+    if time.time() - _orphan_warned.get(key, 0.0) < 3600.0:
+        return
+    _orphan_warned[key] = time.time()
+    what = ", ".join(f"{getattr(x, 'symbol', '?')} #{getattr(x, 'ticket', '?')} "
+                     f"({'position' if hasattr(x, 'profit') else 'pending order'})"
+                     for x in orphans[:8])
+    msg = (f"WARNING: {len(orphans)} EMBER order(s)/position(s) on markets this bot does NOT trade now ({what}). Nobody manages them: "
+           f"a pending order can still fill, a position closes only at its stop-loss. Delete the pending orders and close the positions "
+           f"you do not want in MT5 (Trade tab, right-click). This bot has not touched them.")
+    _log(msg)
+    try:
+        send_telegram_alert("⚠️ " + msg)
+    except Exception:
+        pass
 
 
 def _risk_base(equity=None) -> float:
