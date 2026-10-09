@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from noise_fx.run_fx import PAIRS
+# kept here (not imported from run_fx) so the exporter needs no timezone data on Windows
+PAIRS = ["EURUSD", "GBPUSD", "USDJPY", "USDCAD", "AUDUSD", "USDCHF", "NZDUSD", "EURJPY", "GBPJPY"]
 
 
 def main():
