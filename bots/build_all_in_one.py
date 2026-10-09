@@ -30,7 +30,7 @@ SETUP
   2. Edit ACCOUNTS below. One account on this PC's normal MT5: leave mt5_path = None.
      Several accounts: give each its own terminal64.exe path.
   3. Change "evaluation" to "funded" for an account once it passes.
-  4. Run this file. Dashboards: account #1 NBRO http://127.0.0.1:8777  EMBER http://127.0.0.1:8710 (#2: 8778 / 8711, ...)
+  4. Run this file and open ONE dashboard: http://127.0.0.1:8800  (a tab per account and bot; every button works from there)
      Ctrl+C stops everything.
 
 The two bots' own code is stored inside this file unchanged (sha256 below) and is written to the folder
@@ -41,12 +41,16 @@ All accounts take the SAME trades: they win and lose together. Check Atlas's rul
 import argparse
 import base64
 import hashlib
+import http.client
 import os
+import re
+import threading
 import signal
 import subprocess
 import sys
 import time
 import zlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # ============================================================================================ EDIT THIS
 ACCOUNTS = [
@@ -55,7 +59,8 @@ ACCOUNTS = [
     # {"label": "Atlas3", "mt5_path": r"C:\MT5_Atlas3\terminal64.exe", "stage": "evaluation", "btc": False},
 ]
 SUFFIX = ""             # broker symbol suffix, normally empty at Atlas
-NBRO_FIRST_PORT = 8777
+HUB_PORT = 8800        # the ONE dashboard to open: http://127.0.0.1:8800 (every account, both bots)
+NBRO_FIRST_PORT = 8777  # internal ports the bots use behind the hub (you don't need to open these)
 EMBER_FIRST_PORT = 8710
 # ======================================================================================================
 
@@ -114,6 +119,94 @@ def check_setup():
     return problems
 
 
+# ---- the one dashboard (hub): one port, every account's NBRO and EMBER dashboards behind it ---------------
+HUB_TARGETS = {}            # "0/nbro" -> (title, port)
+HUB_PROCS = {}              # "0/nbro" -> Popen (to show running / stopped)
+_ABS = re.compile(rb'(["\'])/(status|control|close|dashboard\.js)(["\'])')
+
+
+def _hub_page():
+    tabs = "".join(f'<button onclick="show(\'{k}\')" id="t-{k.replace("/", "-")}">{t}</button>' for k, (t, _) in HUB_TARGETS.items())
+    first = next(iter(HUB_TARGETS))
+    return f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Atlas Bot</title><style>
+body{{margin:0;font-family:system-ui,sans-serif;background:#0f1115;color:#e6e6e6}}
+header{{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 12px;background:#171a21;border-bottom:1px solid #2a2f3a}}
+header b{{margin-right:10px}} button{{background:#232836;color:#e6e6e6;border:1px solid #343b4d;border-radius:6px;padding:6px 12px;cursor:pointer}}
+button.on{{background:#2f6fed;border-color:#2f6fed}} .dead{{color:#ff6b6b}} #st{{margin-left:auto;font-size:12px;color:#9aa3b2}}
+iframe{{border:0;width:100%;height:calc(100vh - 52px);background:#fff}}</style></head><body>
+<header><b>Atlas Bot</b>{tabs}<span id="st"></span></header><iframe id="f"></iframe>
+<script>
+function show(k){{document.getElementById("f").src="/b/"+k+"/";
+ document.querySelectorAll("header button").forEach(b=>b.classList.toggle("on",b.id==="t-"+k.replace("/","-")));
+ try{{localStorage.setItem("tab",k)}}catch(e){{}}}}
+async function alive(){{try{{const r=await (await fetch("/alive")).json();
+ document.getElementById("st").innerHTML=Object.entries(r).map(([k,v])=>v?"":'<span class="dead">'+k+' stopped</span>').join(" ")||"all bots running";}}catch(e){{}}}}
+let t=null;try{{t=localStorage.getItem("tab")}}catch(e){{}}
+show(t&&document.getElementById("t-"+t.replace("/","-"))?t:"{first}");alive();setInterval(alive,10000);
+</script></body></html>"""
+
+
+class HubHandler(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def _send(self, code, body, ctype="text/plain; charset=utf-8", extra=()):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        for h, v in extra:
+            self.send_header(h, v)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _proxy(self, method):
+        m = re.match(r"^/b/(\d+/(?:nbro|ember))(/.*)?$", self.path)
+        if not m or m.group(1) not in HUB_TARGETS:
+            return self._send(404, b"not found")
+        if m.group(2) is None:
+            return self._send(302, b"", extra=[("Location", self.path + "/")])
+        port = HUB_TARGETS[m.group(1)][1]
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0) or 0)) if method == "POST" else None
+        headers = {h: self.headers[h] for h in ("Content-Type", "Authorization") if self.headers.get(h)}
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
+            c.request(method, m.group(2), body=body, headers=headers)
+            r = c.getresponse()
+            data = r.read()
+        except OSError:
+            return self._send(502, f"{HUB_TARGETS[m.group(1)][0]} is not answering yet (starting, or stopped). "
+                                   f"This page retries when you reload it.".encode())
+        ctype = r.getheader("Content-Type", "application/octet-stream")
+        if "html" in ctype or "javascript" in ctype:
+            data = _ABS.sub(rb"\1\2\3", data)          # "/status" -> "status": stays under /b/<account>/<bot>/
+        extra = [(h, r.getheader(h)) for h in ("WWW-Authenticate", "Retry-After") if r.getheader(h)]
+        self._send(r.status, data, ctype, extra)
+
+    def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            return self._send(200, _hub_page().encode(), "text/html; charset=utf-8")
+        if self.path == "/alive":
+            import json
+            return self._send(200, json.dumps({HUB_TARGETS[k][0]: p.poll() is None for k, p in HUB_PROCS.items()}).encode(),
+                              "application/json")
+        self._proxy("GET")
+
+    def do_POST(self):
+        self._proxy("POST")
+
+
+def start_hub():
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", HUB_PORT), HubHandler)
+    except OSError as e:
+        print(f"Dashboard port {HUB_PORT} is busy ({e}): change HUB_PORT at the top of this file. The bots still run.")
+        return
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    print(f"\n>>> DASHBOARD: http://127.0.0.1:{HUB_PORT}  (every account, NBRO and EMBER, one page)\n")
+
+
 def stop(p):
     if p.poll() is None:
         try:
@@ -129,10 +222,12 @@ def main():
     if not ACCOUNTS:
         raise SystemExit("ACCOUNTS is empty: add your account(s) at the top of atlas_bot.py")
     plan = [commands(i, acc) for i, acc in enumerate(ACCOUNTS)]
-    print(f"{'#':<3}{'account':<12}{'stage':<12}{'NBRO dashboard':<26}{'EMBER dashboard':<26}MT5")
+    print(f"Dashboard (one page for everything): http://127.0.0.1:{HUB_PORT}\n")
+    print(f"{'#':<3}{'account':<12}{'stage':<12}MT5")
     for i, (label, stage, _, _) in enumerate(plan):
-        print(f"{i + 1:<3}{label:<12}{stage:<12}{'http://127.0.0.1:' + str(NBRO_FIRST_PORT + i):<26}"
-              f"{'http://127.0.0.1:' + str(EMBER_FIRST_PORT + i):<26}{ACCOUNTS[i].get('mt5_path') or '(this PC default MT5)'}")
+        print(f"{i + 1:<3}{label:<12}{stage:<12}{ACCOUNTS[i].get('mt5_path') or '(this PC default MT5)'}")
+        HUB_TARGETS[f"{i}/nbro"] = (f"{label} NBRO", NBRO_FIRST_PORT + i)
+        HUB_TARGETS[f"{i}/ember"] = (f"{label} EMBER", EMBER_FIRST_PORT + i)
     problems = check_setup()
     if problems:
         raise SystemExit("Fix these first:\n  - " + "\n  - ".join(problems))
@@ -143,10 +238,12 @@ def main():
         return
     flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
     running = {}
-    for label, _, nbro, ember in plan:
+    for i, (label, _, nbro, ember) in enumerate(plan):
         running[label] = (subprocess.Popen(nbro, cwd=RUN_DIR, creationflags=flags),
                           subprocess.Popen(ember, cwd=RUN_DIR, creationflags=flags))
+        HUB_PROCS[f"{i}/nbro"], HUB_PROCS[f"{i}/ember"] = running[label]
         time.sleep(3)
+    start_hub()
     print(f"\nRunning {len(running)} account(s). Ctrl+C stops everything.\n")
     try:
         while running:
