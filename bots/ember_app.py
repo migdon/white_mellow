@@ -272,7 +272,7 @@ try:
 except ImportError:
     MT5_AVAILABLE = False
 
-APP_VERSION = "2026-10-09.EMBER-24"
+APP_VERSION = "2026-10-09.EMBER-25"
 
 # ============================================================
 # STRATEGY PARAMETERS (validated — see header; not fit beyond the published 0.8/10 baseline)
@@ -324,8 +324,8 @@ SYMBOL_ENABLED = {name: True for name in SYMBOL_PROFILES}
 _LOG_TAG = None          # which market the poll thread is working on right now, so the shared Activity Log can say so
 
 
-def _preset(risk, dd_pct, daily_pct, target, cap, shield):
-    d = {f"risk_pct__{n}": risk for n in SYMBOL_PROFILES}
+def _preset(risk, dd_pct, daily_pct, target, cap, shield, per_symbol=None):
+    d = {f"risk_pct__{n}": (per_symbol or {}).get(n, risk) for n in SYMBOL_PROFILES}
     d.update(max_account_drawdown_pct=dd_pct, max_account_drawdown_mode="trailing", daily_loss_guard_pct=daily_pct, profit_target_pct=target,
              open_risk_cap_pct=cap, protector_shield_pct=shield, daily_loss_guard_enabled=True, max_account_drawdown_enabled=True,
              news_protection_enabled=True)
@@ -337,7 +337,14 @@ def _preset(risk, dd_pct, daily_pct, target, cap, shield):
 # (open loss >= 2% of the starting balance closes everything and cuts the profit split to 50% for good). The daily guard is set to ~60% of the daily limit.
 # The risk numbers come from this project's own measurements (header): 1.0% is the safe speed for the evaluation; 0.5% keeps the funded drawdown inside 6%.
 # EMBER-24: re-measured on gold 2018-2026 (bot_audit/ember_atlas.py): 1.5% -> pass ~82%, ~4% breached; 0.75% funded survived every start date.
-PRESETS = {"evaluation": _preset(1.5, 10, 3.0, 3, 0, 0), "funded": _preset(0.75, 6, 1.8, 0, 1.5, 1.7)}
+# BTCUSD (opt-in) always runs at HALF the gold risk: at full risk it raised the evaluation breaches (bot_audit/combo_atlas.py).
+# combo-*: EMBER on the SAME account as NBRO (nbro_app.py --preset atlas-eval / atlas-funded --risk 0.25). Replay of both bots together
+# (reports/combo_atlas.md): evaluation NBRO 1%/index + gold 1% + BTC 0.5% -> ~46% pass within 21 trading days, ~95% within a year,
+# ~5% breached, median ~22 days; funded NBRO 0.25%/index + gold 0.5% + BTC 0.25% -> alive in every start date, ~2 payouts/yr, ~$2,200/yr on $50k.
+PRESETS = {"evaluation": _preset(1.5, 10, 3.0, 3, 0, 0, {"BTCUSD": 0.75}),
+           "funded": _preset(0.75, 6, 1.8, 0, 1.5, 1.7, {"BTCUSD": 0.35}),
+           "combo-evaluation": _preset(1.0, 10, 3.0, 3, 0, 0, {"BTCUSD": 0.5}),
+           "combo-funded": _preset(0.5, 6, 1.8, 0, 1.0, 1.7, {"BTCUSD": 0.25})}
 
 
 def apply_symbol(name: str) -> None:
@@ -2715,6 +2722,8 @@ if __name__ == "__main__":
     ap.add_argument("--host", default=None)
     ap.add_argument("--balance", type=float, default=None)
     ap.add_argument("--risk", type=float, default=None)
+    ap.add_argument("--symbol-risk", nargs="*", default=None, metavar="SYMBOL=PCT",
+                    help="risk %% for one market, e.g. --symbol-risk BTCUSD=0.5 (applied after --preset and --risk)")
     ap.add_argument("--max-dd", type=float, default=None)
     ap.add_argument("--dd-mode", choices=["static", "trailing"], default=None)
     ap.add_argument("--daily-loss", type=float, default=None)
@@ -2753,6 +2762,13 @@ if __name__ == "__main__":
             RISK_PCT_BY_SYMBOL[_n] = args.risk
         RISK_PCT = args.risk
         _cli_keys += ["risk_pct"] + [f"risk_pct__{_n}" for _n in SYMBOL_PROFILES]
+    if args.symbol_risk:
+        for _item in args.symbol_risk:
+            _n, _, _v = _item.partition("=")
+            if _n not in SYMBOL_PROFILES or not _v:
+                ap.error(f"--symbol-risk {_item}: use SYMBOL=PCT with SYMBOL one of {', '.join(sorted(SYMBOL_PROFILES))}")
+            RISK_PCT_BY_SYMBOL[_n] = float(_v)
+            _cli_keys.append(f"risk_pct__{_n}")
     if args.max_dd is not None:
         MAX_ACCOUNT_DRAWDOWN_PCT = args.max_dd
         _cli_keys.append("max_account_drawdown_pct")

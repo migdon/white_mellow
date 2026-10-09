@@ -24,3 +24,22 @@ Adding USDJPY (EMBER) as a 4th market at 1%/1%: 0.49 / 0.95 / 0.05 / 20 days. It
 
 The Protector was never reached. Running both bots together roughly doubles the payouts each bot gets alone, because
 more days close with ≥ +0.5%.
+
+## With BTCUSD as a 4th market (EMBER, Atlas spread $67, swap included)
+
+| NBRO / gold / BTC | Pass ≤ 21 days | Pass ≤ 1 year | Breach | Median days |
+|---|---|---|---|---|
+| 1% / 1% / none | 0.46 | 0.96 | 0.04 | 22 |
+| **1% / 1% / 0.5%** | **0.46** | **0.95** | **0.05** | **22** |
+| 1% / 1% / 1% | 0.46 | 0.88 | 0.12 | 20 |
+
+| Funded NBRO / gold / BTC | Alive | Payouts/yr | $/yr |
+|---|---|---|---|
+| 0.25% / 0.5% / none | 1.00 | 1.8 | ~2,010 |
+| **0.25% / 0.5% / 0.25%** | **1.00** | **2.0** | **~2,160** |
+| 0.25% / 0.5% / 0.5% | 1.00 | 1.9 | ~2,300 |
+
+BTCUSD is fine at half the gold risk. At full risk it triples the evaluation breaches.
+**EMBER-25 presets:**
+- `combo-evaluation`: gold 1%, BTC 0.5%
+- `combo-funded`: gold 0.5%, BTC 0.25%
