@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+mt5_export/
+reports/*_daily.csv
