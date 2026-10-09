@@ -3,7 +3,8 @@ RSI2 — Connors RSI(2) pullback bot for MT5 (SPX500 + NAS100, long only, daily 
 
 Rule (the one tested in bot_audit/classics.py, 2012-2026: SPX500 t 2.67, 73% winners; NAS100 t 1.63; pooled t 2.37 PASS):
   once per day, on COMPLETED daily bars (the broker's server day):
-    flat  and close > SMA(200) and RSI(2) < 10   -> BUY at market at the start of the new day
+    flat  and close > SMA(200) and RSI(2) < 20   -> BUY   (--rsi; 20 tested best of 10/15/20/25: 30 trades/yr on both
+                                                             indices, pooled t 2.88, Sharpe 0.74, 66-67% winners) at market at the start of the new day
     long  and close > SMA(5)                     -> SELL (close) at market at the start of the new day
   plus a broker-side emergency stop (not in the classic rule / the backtest): --stop-pct below entry.
 
@@ -51,14 +52,14 @@ def rsi2(closes):
     return 100 - 100 / (1 + rs)
 
 
-def signal(closes, in_position):
+def signal(closes, in_position, threshold=20):
     """closes = COMPLETED daily closes, oldest first. Returns 'BUY', 'SELL' or None."""
     if len(closes) < 205:
         return None
     c = np.asarray(closes, dtype=float)
     if in_position:
         return "SELL" if c[-1] > c[-5:].mean() else None
-    if c[-1] > c[-200:].mean() and rsi2(c) < 10:
+    if c[-1] > c[-200:].mean() and rsi2(c) < threshold:
         return "BUY"
     return None
 
@@ -116,6 +117,7 @@ def main():
     ap = argparse.ArgumentParser(description="Connors RSI(2) bot, SPX500 + NAS100, long only")
     ap.add_argument("--symbols", nargs="+", default=["SPX500", "NAS100"], choices=sorted(NAMES))
     ap.add_argument("--notional", type=float, default=0.5, help="position size per index as a fraction of equity")
+    ap.add_argument("--rsi", type=float, default=20.0, help="buy when RSI(2) is below this (classic 10 = fewer trades)")
     ap.add_argument("--stop-pct", type=float, default=4.0, help="emergency stop, %% below entry")
     ap.add_argument("--daily-guard", type=float, default=3.0, help="no new entries once today's loss reaches this %%")
     ap.add_argument("--max-dd", type=float, default=10.0, help="trailing max drawdown %% of the start balance (entries stop 1%% before)")
@@ -168,7 +170,7 @@ def main():
                     continue                    # market closed / stale quotes: try again later today
                 closes = [float(r["close"]) for r in rates[:-1]]      # COMPLETED days only
                 pos = my_position(n)
-                sig = signal(closes, pos is not None)
+                sig = signal(closes, pos is not None, a.rsi)
                 if sig == "SELL" and pos:
                     ok, rc = (True, None) if a.dry_run else send(n, "SELL", pos.volume, position=pos.ticket)
                     log(f"{s}: close > SMA5 -> EXIT {pos.volume} lots {'(dry-run)' if a.dry_run else ('ok' if ok else f'FAILED rc {rc}')}")
@@ -184,7 +186,7 @@ def main():
                         else:
                             sl = tick.ask * (1 - a.stop_pct / 100)
                             ok, rc = (True, None) if a.dry_run else send(n, "BUY", vol, sl=sl)
-                            log(f"{s}: close > SMA200, RSI(2) < 10 -> BUY {vol} lots, stop {sl:.2f} "
+                            log(f"{s}: close > SMA200, RSI(2) < {a.rsi:g} -> BUY {vol} lots, stop {sl:.2f} "
                                 f"{'(dry-run)' if a.dry_run else ('ok' if ok else f'FAILED rc {rc}')}")
                             if not ok:
                                 continue
