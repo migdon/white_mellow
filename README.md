@@ -45,3 +45,14 @@ python -m noise_fx.run_fx --data m5_export
 python -m noise_fx.tests.test_sanity
 python -m noise_fx.tests.test_equivalence_nbro path/to/nbro_app.py   # parehong trade ba ang ginagawa ng engine at ng NBRO?
 ```
+
+### Ibang index para sa umaga at hapon (PHT)
+
+Ang protocol ay nasa [`noise_fx/PROTOCOL_INDICES.md`](noise_fx/PROTOCOL_INDICES.md): JPN225, HK50, AUS200, GER40, UK100,
+gamit ang parehong NBRO rule. May kasama ring engine check sa NAS100 at SPX500.
+
+```bash
+python -m noise_fx.export_m5 --list                                   # hanapin ang pangalan ng mga index sa broker
+python -m noise_fx.export_m5 --out m5_export --from 2012-01-01 --only <mga pangalan>
+python -m noise_fx.run_indices --data m5_export --names NAS100=<pangalan> SPX500=<pangalan> ...
+```

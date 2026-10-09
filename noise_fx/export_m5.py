@@ -29,14 +29,26 @@ def main():
     ap.add_argument("--suffix", default="")
     ap.add_argument("--extra", nargs="*", default=["NAS100", "SPX500"],
                     help="also export these (to check the engine reproduces NBRO's own numbers)")
+    ap.add_argument("--only", nargs="*", default=None,
+                    help="export exactly these broker symbols (no FX list), e.g. --only JPN225 HK50 GER40")
+    ap.add_argument("--list", action="store_true",
+                    help="print the broker's non-FX symbols (indices, metals, ...) and exit")
     a = ap.parse_args()
     if not mt5.initialize():
         raise SystemExit(f"MT5 init failed: {mt5.last_error()}")
+    if a.list:
+        for s_ in mt5.symbols_get() or []:
+            path = getattr(s_, "path", "")
+            if "forex" not in path.lower():
+                print(f"{s_.name:<16} {path}")
+        mt5.shutdown()
+        return
     os.makedirs(a.out, exist_ok=True)
     start = datetime.fromisoformat(a.start).replace(tzinfo=timezone.utc)
     try:
-        for sym in PAIRS + a.extra:
-            name = sym + (a.suffix if sym in PAIRS else "")
+        todo = a.only if a.only is not None else PAIRS + a.extra
+        for sym in todo:
+            name = sym + (a.suffix if sym in PAIRS and a.only is None else "")
             if not mt5.symbol_select(name, True):
                 print(f"!! {name}: not available")
                 continue
