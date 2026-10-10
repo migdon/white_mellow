@@ -164,8 +164,9 @@ HUB_ACCOUNTS = []           # [(label, [target keys])], index = account #
 
 def _hub_page(acc):
     label, keys = HUB_ACCOUNTS[acc]
-    tabs = "".join(f'<button onclick="show(\'{k}\')" id="t-{k.replace("/", "-")}">{HUB_TARGETS[k][0]}</button>' for k in keys)
-    first = keys[0]
+    tabs = '<button onclick="show(\'ov\')" id="t-ov">Overview</button>' + "".join(
+        f'<button onclick="show(\'{k}\')" id="t-{k.replace("/", "-")}">{HUB_TARGETS[k][0].split()[-1]}</button>' for k in keys)
+    first = "ov"
     others = ('<span class="acc">Accounts:' + "".join(
         f'<a href="http://127.0.0.1:{HUB_PORT + j}/"{" class=cur" if j == acc else ""}>{lb} :{HUB_PORT + j}</a>'
         for j, (lb, _) in enumerate(HUB_ACCOUNTS)) + "</span>")
@@ -181,13 +182,91 @@ button.on{{background:#2f6fed;border-color:#2f6fed}} .dead{{color:#ff6b6b}} #st{
 iframe{{border:0;width:100%;height:calc(100vh - 52px);background:#fff}}</style></head><body>
 <header><b>{label}</b>{tabs}<span id="st"></span>{others}</header><iframe id="f"></iframe>
 <script>
-function show(k){{document.getElementById("f").src="/b/"+k+"/";
+function show(k){{document.getElementById("f").src=(k==="ov"?"/overview":"/b/"+k+"/");
  document.querySelectorAll("header button").forEach(b=>b.classList.toggle("on",b.id==="t-"+k.replace("/","-")));
  try{{localStorage.setItem("tab{acc}",k)}}catch(e){{}}}}
 async function alive(){{try{{const r=await (await fetch("/alive")).json();
  document.getElementById("st").innerHTML=Object.entries(r).map(([k,v])=>v?"":'<span class="dead">'+k+' stopped</span>').join(" ")||"all bots running";}}catch(e){{}}}}
 let t=null;try{{t=localStorage.getItem("tab{acc}")}}catch(e){{}}
 show(t&&document.getElementById("t-"+t.replace("/","-"))?t:"{first}");alive();setInterval(alive,10000);
+</script></body></html>"""
+
+OVERVIEW_HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{margin:0;padding:16px;font-family:system-ui,sans-serif;background:#0f1115;color:#e6e6e6}
+.cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.card{background:#171a21;border:1px solid #2a2f3a;border-radius:8px;padding:10px 14px;min-width:140px}
+.card .k{font-size:11px;color:#9aa3b2;text-transform:uppercase;letter-spacing:.04em}.card .v{font-size:20px;font-weight:600;margin-top:4px}
+table{width:100%;border-collapse:collapse;background:#171a21;border:1px solid #2a2f3a;border-radius:8px;overflow:hidden}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #2a2f3a;font-size:14px;vertical-align:top}
+th{font-size:11px;color:#9aa3b2;text-transform:uppercase;letter-spacing:.04em;background:#141720}
+.on{color:#4ade80}.off{color:#f87171}.muted{color:#9aa3b2;font-size:12px}.pos{color:#4ade80}.neg{color:#f87171}
+button{border:1px solid #343b4d;border-radius:6px;padding:6px 12px;cursor:pointer;color:#fff;font-weight:600}
+button.stop{background:#7f1d1d}button.start{background:#166534}button:disabled{opacity:.5}
+#note{margin-top:10px;font-size:13px;color:#9aa3b2}
+</style></head><body>
+<div class="cards" id="cards"></div>
+<table><thead><tr><th>Market</th><th>Bot</th><th>Status</th><th>Today</th><th>Open trade</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+<div id="note">Stop = no new trades on that market (its waiting orders are cancelled); an open trade is still managed and closed by its rules.</div>
+<script>
+const ACC = "__ACC__";
+const f2 = (x, d=2) => (x === null || x === undefined || isNaN(x)) ? "-" : Number(x).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+async function get(bot){ try { const r = await fetch("/b/"+ACC+"/"+bot+"/status"); return r.ok ? await r.json() : null; } catch(e){ return null; } }
+async function post(bot, body){ return fetch("/b/"+ACC+"/"+bot+"/control",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }
+let N=null, E=null;
+async function stopStart(bot, sym, run){
+  if (!confirm((run ? "Start " : "Stop ") + sym + "?")) return;
+  if (bot === "nbro") {
+    let dis = (N && N.config && N.config.disabled_symbols || []).slice();
+    dis = run ? dis.filter(x => x !== sym) : Array.from(new Set(dis.concat([sym])));
+    await post("nbro", {disabled_symbols: dis});
+  } else { const o = {}; o["enabled__"+sym] = run; await post("ember", o); }
+  setTimeout(load, 800);
+}
+function tradeCell(t){
+  if (!t) return '<span class="muted">none</span>';
+  const r = (t.r === null || t.r === undefined) ? "" : ' <span class="'+(t.r>=0?"pos":"neg")+'">'+(t.r>=0?"+":"")+f2(t.r)+'R</span>';
+  const pl = (t.profit === null || t.profit === undefined) ? "" : ' <span class="'+(t.profit>=0?"pos":"neg")+'">$'+f2(t.profit)+'</span>';
+  return '<b>'+t.direction+'</b> '+f2(t.volume)+' lots @ '+f2(t.entry)+'<br><span class="muted">SL '+f2(t.sl)+'</span>'+r+pl;
+}
+function row(sym, bot, running, status, today, trade, up){
+  const btn = up ? '<button class="'+(running?"stop":"start")+'" onclick="stopStart(\\''+bot+'\\',\\''+sym+'\\','+(!running)+')">'+(running?"Stop":"Start")+'</button>' : '';
+  return '<tr><td><b>'+sym+'</b></td><td>'+bot.toUpperCase()+'</td><td>'+(up?(running?'<span class="on">RUNNING</span>':'<span class="off">STOPPED</span>'):'<span class="off">BOT NOT ANSWERING</span>')+
+         '<br><span class="muted">'+(status||"")+'</span></td><td>'+(today||"-")+'</td><td>'+tradeCell(trade)+'</td><td>'+btn+'</td></tr>';
+}
+async function load(){
+  [N, E] = await Promise.all([get("nbro"), get("ember")]);
+  const g = (E && E.guards) || {}, ng = (N && N.guards) || {};
+  const bal = g.balance ?? ng.account_balance, eq = g.equity ?? ng.equity;
+  const dd = (N && N.guards && N.guards.drawdown) || (E && E.guards && E.guards.drawdown) || {};
+  const dl = ng.daily_loss_pct ?? g.daily_loss_pct;
+  const ts = [N, E].filter(Boolean).map(x => x.trade_stats || {});
+  const trades = ts.reduce((a,b)=>a+(b.trades||0),0), wins = ts.reduce((a,b)=>a+(b.wins||0),0), pnl = ts.reduce((a,b)=>a+(b.total_pnl||0),0);
+  document.getElementById("cards").innerHTML = [
+    ["Balance","$"+f2(bal)],["Equity","$"+f2(eq)],
+    ["Today's loss", dl===null||dl===undefined ? "-" : f2(dl)+"%"],
+    ["Room to max drawdown", dd.remaining_to_floor_dollars===undefined ? "-" : "$"+f2(dd.remaining_to_floor_dollars)],
+    ["Closed trades (bots)", trades+(trades?" ("+Math.round(100*wins/trades)+"% won)":"")],
+    ["Closed P&L (bots)", '<span class="'+(pnl>=0?"pos":"neg")+'">$'+f2(pnl)+'</span>']
+  ].map(c => '<div class="card"><div class="k">'+c[0]+'</div><div class="v">'+c[1]+'</div></div>').join("");
+  let html = "";
+  const nsyms = N ? Object.keys(N.symbols||{}) : ["NAS100","SPX500"];
+  for (const s of nsyms) {
+    const st = N ? N.symbols[s] : null, run = N ? !(N.config.disabled_symbols||[]).includes(s) : false;
+    const ot = N ? (N.open_trades||[]).find(t => t.symbol === s) : null;
+    const today = st && st.range_high ? "band "+f2(st.range_low)+" - "+f2(st.range_high)+(st.vwap?"<br><span class=muted>VWAP "+f2(st.vwap)+"</span>":"") : "";
+    html += row(s, "nbro", run, st ? st.phase : "", today, ot, !!N);
+  }
+  const esyms = E ? (E.active_symbols||Object.keys(E.symbols||{})) : ["XAUUSD"];
+  for (const s of esyms) {
+    const st = E ? E.symbols[s] : null, run = st ? st.enabled !== false : false;
+    const today = st && st.today_long_level ? "buy above "+f2(st.today_long_level)+"<br>sell below "+f2(st.today_short_level) : "";
+    const ot = st && st.open_trade ? Object.assign({}, st.open_trade) : null;
+    html += row(s, "ember", run, st ? st.phase + (E.entries_paused ? " (entries paused)" : "") : "", today, ot, !!E);
+  }
+  document.getElementById("rows").innerHTML = html;
+}
+load(); setInterval(load, 5000);
 </script></body></html>"""
 
 
@@ -231,6 +310,8 @@ class HubHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             return self._send(200, _hub_page(self.server.acc).encode(), "text/html; charset=utf-8")
+        if self.path == "/overview":
+            return self._send(200, OVERVIEW_HTML.replace("__ACC__", str(self.server.acc)).encode(), "text/html; charset=utf-8")
         if self.path == "/alive":
             import json
             return self._send(200, json.dumps({HUB_TARGETS[k][0]: HUB_PROCS[k].poll() is None for k in HUB_ACCOUNTS[self.server.acc][1] if k in HUB_PROCS}).encode(),

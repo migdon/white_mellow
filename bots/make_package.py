@@ -72,7 +72,7 @@ UNANG BESES (isang beses lang)
   1. I-install ang Python 3.10/3.11 (i-check ang "Add Python to PATH").
   2. Sa Command Prompt:   pip install MetaTrader5 pandas numpy
   3. Buksan ang Atlas MT5, mag-log in, i-on ang Algo Trading.
-     Tools > Options > Charts > Max bars in chart = Unlimited, tapos i-restart ang MT5.
+     Tools > Options > Charts > Max bars in chart = 100000 (huwag Unlimited: mabigat sa VPS), tapos i-restart ang MT5.
 
 PATAKBUHIN
   1. Buksan ang config.py at ilagay ang (mga) account mo.
@@ -80,6 +80,7 @@ PATAKBUHIN
      Subukan ang settings (walang trade):      python atlas_bot.py --dry-run
   3. I-double click ang start_atlas_bot.bat
   4. Dashboard sa browser:  Atlas1 http://127.0.0.1:8800   Atlas2 :8801   Atlas3 :8802 ...
+     Unang tab = Overview: ang 3 market (NAS100, SPX500, gold), balance, bukas na trade, at Stop/Start bawat market.
 
 TELEGRAM (para may alert sa phone)
   1. Sa Telegram, i-message ang @BotFather -> /newbot -> kopyahin ang TOKEN.
