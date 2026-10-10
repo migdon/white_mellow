@@ -166,8 +166,8 @@ TIMEFRAME_STR = "M5"
 # The same index has different names at different brokers (Atlas: NAS100 / SPX500; Vantage: NAS100.r / SP500.r). If the exact name (+ --suffix) does not exist,
 # the alternatives are tried at start-up, the one found is remembered and written to the Activity Log. The market keeps its own name everywhere else.
 BROKER_NAME_ALTERNATIVES = {
-    "NAS100": ["NAS100.r", "USTEC", "US100", "USTECH"],
-    "SPX500": ["SP500.r", "SP500", "US500", "SPX"],
+    "NAS100": ["NAS100.r", "USTEC", "US100", "USTECH", "NDX100", "US100.cash", "NAS100.cash"],
+    "SPX500": ["SP500.r", "SP500", "US500", "SPX", "US500.cash", "SPX500.cash"],
 }
 SYMBOL_USD_STRENGTH_DIRECTION = {}     # not used by this strategy (both directions are traded); kept so shared code that reads it keeps working
 
@@ -279,6 +279,28 @@ ATLAS_PRESETS = {
                    "profit_target": 3.0, "shield": 0.0, "max_open_risk": 2.0},
     "atlas-funded": {"risk": 0.35, "max_dd": 6.0, "daily_guard": 1.8, "dd_mode": "trailing",
                      "profit_target": None, "shield": 1.7, "max_open_risk": 0.7},
+    # FundedNext Stellar (static max loss, daily loss = % of the start size; rules per third-party summaries Sep 2026,
+    # confirm on fundednext.com). Replayed by bot_audit/fundednext_sim.py on the same trades (no bot guard modelled):
+    #   2-Step 1.0%: both phases passed in ~31% of starts within 6 months, ~65% within 2 years, ~14% breached
+    #   1-Step 0.75%: ~34% within 6 months, ~19% breached (3% daily / 6% max is tight)
+    #   Lite 0.75%: ~21% within 6 months, ~19% breached
+    #   funded 0.5% (2-Step / Lite) or 0.35% (1-Step): ~99-100% alive after a year, ~7-10% of the size a year
+    "fn-2step-p1": {"risk": 1.0, "max_dd": 10.0, "daily_guard": 3.0, "dd_mode": "static",
+                    "profit_target": 8.0, "shield": 0.0, "max_open_risk": 2.0},
+    "fn-2step-p2": {"risk": 1.0, "max_dd": 10.0, "daily_guard": 3.0, "dd_mode": "static",
+                    "profit_target": 5.0, "shield": 0.0, "max_open_risk": 2.0},
+    "fn-2step-funded": {"risk": 0.5, "max_dd": 10.0, "daily_guard": 3.0, "dd_mode": "static",
+                        "profit_target": None, "shield": 0.0, "max_open_risk": 1.0},
+    "fn-1step": {"risk": 0.75, "max_dd": 6.0, "daily_guard": 1.8, "dd_mode": "static",
+                 "profit_target": 10.0, "shield": 0.0, "max_open_risk": 1.5},
+    "fn-1step-funded": {"risk": 0.35, "max_dd": 6.0, "daily_guard": 1.8, "dd_mode": "static",
+                        "profit_target": None, "shield": 0.0, "max_open_risk": 0.7},
+    "fn-lite-p1": {"risk": 0.75, "max_dd": 8.0, "daily_guard": 2.4, "dd_mode": "static",
+                   "profit_target": 8.0, "shield": 0.0, "max_open_risk": 1.5},
+    "fn-lite-p2": {"risk": 0.75, "max_dd": 8.0, "daily_guard": 2.4, "dd_mode": "static",
+                   "profit_target": 4.0, "shield": 0.0, "max_open_risk": 1.5},
+    "fn-lite-funded": {"risk": 0.5, "max_dd": 8.0, "daily_guard": 2.4, "dd_mode": "static",
+                       "profit_target": None, "shield": 0.0, "max_open_risk": 1.0},
 }
 MAX_ACCOUNT_DRAWDOWN_SAFETY_BUFFER_PCT = 0.5   # stop entries this much %
                                     # of original balance BEFORE the real
@@ -3781,8 +3803,8 @@ if __name__ == "__main__":
     ap.add_argument("--plan", choices=sorted(PLAN_PRESETS), default=None,
                     help="prop plan preset (max drawdown-daily limit): instant=5-3, 4-8, 5-10; scales risk, caps and guards")
     ap.add_argument("--preset", choices=sorted(ATLAS_PRESETS), default=None,
-                    help="Atlas 1-Step Access: atlas-eval (1.0%% per index, 10%% trailing, +3%% target) or "
-                         "atlas-funded (0.35%% per index, 6%% trailing, Protector shield 1.7%%); other flags override it")
+                    help="Atlas 1-Step Access: atlas-eval / atlas-funded. FundedNext Stellar: fn-2step-p1 / fn-2step-p2 / "
+                         "fn-2step-funded, fn-1step / fn-1step-funded, fn-lite-p1 / fn-lite-p2 / fn-lite-funded; other flags override it")
     ap.add_argument("--protector-shield", type=float, default=None,
                     help="close this bot's positions at this %% account open loss (Atlas Protector = 2%%); 0 = off")
     ap.add_argument("--risk", type=float, default=None, help="risk %% per trade, applied to every pair")
