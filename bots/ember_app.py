@@ -1,6 +1,8 @@
 """
 EMBER — Expansion-Move Breakout, Edge-tested, Risk-capped
 =============================================================
+EMBER-27 (2026-10-10): started with a combo preset (next to NBRO, as atlas_bot.py does), the dashboard's Evaluation / Funded buttons
+  now show and apply the COMBO values (gold 1.0% / 0.5%) instead of the solo ones (1.5% / 0.75%), so one click can no longer raise the risk.
 EMBER-26 (2026-10-10), from the user's live log (Vantage, EMBER-20..25):
   - The broker clock was read from a STALE tick right after MT5 reconnected (logged UTC-6, UTC-2, UTC+2 for a minute before UTC+3).
     A reading that is not within 3 minutes of a whole hour is now ignored (a live tick always is).
@@ -277,7 +279,7 @@ try:
 except ImportError:
     MT5_AVAILABLE = False
 
-APP_VERSION = "2026-10-10.EMBER-26"
+APP_VERSION = "2026-10-10.EMBER-27"
 
 # ============================================================
 # STRATEGY PARAMETERS (validated — see header; not fit beyond the published 0.8/10 baseline)
@@ -346,6 +348,7 @@ def _preset(risk, dd_pct, daily_pct, target, cap, shield, per_symbol=None):
 # combo-*: EMBER on the SAME account as NBRO (nbro_app.py --preset atlas-eval / atlas-funded --risk 0.25). Replay of both bots together
 # (reports/combo_atlas.md): evaluation NBRO 1%/index + gold 1% + BTC 0.5% -> ~46% pass within 21 trading days, ~95% within a year,
 # ~5% breached, median ~22 days; funded NBRO 0.25%/index + gold 0.5% + BTC 0.25% -> alive in every start date, ~2 payouts/yr, ~$2,200/yr on $50k.
+PRESET_FAMILY = ""        # "combo-" when started with a combo preset (EMBER next to NBRO): the dashboard's preset buttons then apply the combo values
 PRESETS = {"evaluation": _preset(1.5, 10, 3.0, 3, 0, 0, {"BTCUSD": 0.75}),
            "funded": _preset(0.75, 6, 1.8, 0, 1.5, 1.7, {"BTCUSD": 0.35}),
            "combo-evaluation": _preset(1.0, 10, 3.0, 3, 0, 0, {"BTCUSD": 0.5}),
@@ -2026,7 +2029,8 @@ def get_status_dict():
                   "daily_loss_guard_enabled": DAILY_LOSS_GUARD_ENABLED, "max_account_drawdown_enabled": MAX_ACCOUNT_DRAWDOWN_ENABLED,
                   "news_protection_enabled": NEWS_PROTECTION_ENABLED, "news_window_before_min": NEWS_WINDOW_BEFORE_MIN,
                   "news_window_after_min": NEWS_WINDOW_AFTER_MIN},
-        "entries_paused": ENTRIES_PAUSED, "presets": PRESETS, "risk": dict(_risk_snapshot),
+        "entries_paused": ENTRIES_PAUSED, "presets": {"evaluation": PRESETS[PRESET_FAMILY + "evaluation"], "funded": PRESETS[PRESET_FAMILY + "funded"]},
+        "preset_family": PRESET_FAMILY, "risk": dict(_risk_snapshot),
         "news": {"enabled": NEWS_PROTECTION_ENABLED, "next_event": get_next_news_event(), "calendar_note": news_calendar_note()},
         "telegram_on": bool(_load_telegram_config().get("enabled")),
     }
@@ -2326,7 +2330,7 @@ function populateSettings(cfg, status) {
   document.getElementById("shieldPct").value = cfg.protector_shield_pct ? cfg.protector_shield_pct : "";
   const P = status.presets;
   const d = p => "risk " + Object.keys(p).filter(k => k.startsWith("risk_pct__")).map(k => p[k])[0] + "% per market, drawdown " + p.max_account_drawdown_pct + "% " + p.max_account_drawdown_mode + ", daily guard " + p.daily_loss_guard_pct + "%, " + (p.profit_target_pct ? "target " + p.profit_target_pct + "%" : "no target") + (p.open_risk_cap_pct ? ", open-risk cap " + p.open_risk_cap_pct + "%" : ", no cap") + (p.protector_shield_pct ? ", shield " + p.protector_shield_pct + "%" : "");
-  document.getElementById("presetDesc").innerHTML = "<b>Evaluation:</b> " + d(P.evaluation) + ".<br><b>Funded:</b> " + d(P.funded) + ".<br>Funded accounts have tighter limits (6% drawdown, 3% daily, Atlas Protector at 2%): switch to Funded after you pass.";
+  document.getElementById("presetDesc").innerHTML = (status.preset_family ? "<i>Running next to NBRO: these buttons apply the combined (combo) settings.</i><br>" : "") + "<b>Evaluation:</b> " + d(P.evaluation) + ".<br><b>Funded:</b> " + d(P.funded) + ".<br>Funded accounts have tighter limits (6% drawdown, 3% daily, Atlas Protector at 2%): switch to Funded after you pass.";
 }
 function applyPreset(name) {
   const p = latestStatus.presets[name];
@@ -2802,6 +2806,8 @@ if __name__ == "__main__":
     _cli_keys = []
     if args.preset:
         _save_control(PRESETS[args.preset])
+        if args.preset.startswith("combo-"):
+            PRESET_FAMILY = "combo-"
     if args.balance is not None:
         INITIAL_ACCOUNT_BALANCE = args.balance
         _BALANCE_SET_BY_CLI = True
