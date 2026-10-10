@@ -323,6 +323,120 @@ def start_hub():
     print()
 
 
+# ---- weekly Telegram summary (every Saturday, after the US week has closed) -------------------------------------
+SUMMARY_STATE = os.path.join(RUN_DIR, "weekly_summary_state.json")
+
+
+def _bot_status(port):
+    import json
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        c.request("GET", "/status")
+        r = c.getresponse()
+        return json.loads(r.read()) if r.status == 200 else None
+    except Exception:
+        return None
+
+
+def _telegram_cfg():
+    import json
+    if TELEGRAM_BOT_TOKEN.strip() and str(TELEGRAM_CHAT_ID).strip():
+        return TELEGRAM_BOT_TOKEN.strip(), str(TELEGRAM_CHAT_ID).strip()
+    for name in ("nbro_telegram_config.json", "ember_telegram_config.json"):
+        try:
+            with open(os.path.join(RUN_DIR, name)) as f:
+                c = json.load(f)
+            if c.get("enabled") and c.get("bot_token") and c.get("chat_id"):
+                return c["bot_token"], str(c["chat_id"])
+        except Exception:
+            continue
+    return None, None
+
+
+def _send_telegram(text):
+    import json
+    import urllib.request
+    token, chat = _telegram_cfg()
+    if not token:
+        print("Weekly summary: Telegram is not set up (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).")
+        return False
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage",
+                                 data=json.dumps({"chat_id": chat, "text": text}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=20)
+        return True
+    except Exception as e:
+        print(f"Weekly summary: Telegram send failed: {e}")
+        return False
+
+
+def weekly_summary_text(days=7):
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+    lines = [f"WEEKLY SUMMARY {since:%b %d} - {now:%b %d, %Y}"]
+    tot_pnl, tot_n, tot_w = 0.0, 0, 0
+    for i, (label, keys) in enumerate(HUB_ACCOUNTS):
+        stage = ACCOUNTS[i].get("stage", "?") if i < len(ACCOUNTS) else "?"
+        stats = {k.split("/")[1]: _bot_status(HUB_TARGETS[k][1]) for k in keys}
+        n, e = stats.get("nbro"), stats.get("ember")
+        g = (e or {}).get("guards") or {}
+        ng = (n or {}).get("guards") or {}
+        bal = g.get("balance") if g.get("balance") is not None else ng.get("account_balance")
+        eq = g.get("equity") if g.get("equity") is not None else ng.get("equity")
+        per = {}
+        for st in (n, e):
+            for t in (st or {}).get("recent_trades", []) or []:
+                try:
+                    ts = datetime.fromisoformat(str(t.get("closed_at")).replace("Z", "+00:00"))
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                except Exception:
+                    continue
+                if ts < since or t.get("pnl") is None:
+                    continue
+                d = per.setdefault(t.get("symbol", "?"), [0, 0, 0.0])
+                d[0] += 1; d[1] += (t["pnl"] > 0); d[2] += float(t["pnl"])
+        an = sum(v[0] for v in per.values()); aw = sum(v[1] for v in per.values()); ap = sum(v[2] for v in per.values())
+        tot_pnl += ap; tot_n += an; tot_w += aw
+        openn = len((n or {}).get("open_trades") or []) + len((e or {}).get("open_trades") or [])
+        down = [b.upper() for b, st in (("nbro", n), ("ember", e)) if st is None]
+        lines.append("")
+        lines.append(f"[{label}] {stage}" + (f"  !! {' and '.join(down)} NOT ANSWERING" if down else ""))
+        if bal is not None:
+            lines.append(f"  balance ${bal:,.2f}" + (f"  equity ${eq:,.2f}" if eq is not None else ""))
+        lines.append(f"  week: {an} trades, {aw} won, P&L ${ap:+,.2f}" + (f"  | open now: {openn}" if openn else ""))
+        for sym, (c, w, pnl) in sorted(per.items()):
+            lines.append(f"    {sym}: {c} trades, {w} won, ${pnl:+,.2f}")
+    if len(HUB_ACCOUNTS) > 1:
+        lines.append("")
+        lines.append(f"ALL ACCOUNTS: {tot_n} trades, {tot_w} won, P&L ${tot_pnl:+,.2f}")
+    return "\n".join(lines)
+
+
+def _weekly_summary_loop():
+    import json
+    from datetime import datetime, timezone
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            week = f"{now.isocalendar()[0]}-{now.isocalendar()[1]}"
+            try:
+                with open(SUMMARY_STATE) as f:
+                    last = json.load(f).get("week")
+            except Exception:
+                last = None
+            # Saturday 02:00 UTC or later (= Saturday 10:00 in the Philippines), once per week
+            if now.weekday() == 5 and now.hour >= 2 and last != week:
+                if _send_telegram(weekly_summary_text()):
+                    with open(SUMMARY_STATE, "w") as f:
+                        json.dump({"week": week, "sent_at": now.isoformat()}, f)
+        except Exception as e:
+            print(f"Weekly summary error (bots keep running): {e}")
+        time.sleep(600)
+
+
 def stop(p):
     if p.poll() is None:
         try:
@@ -335,9 +449,21 @@ def main():
     ap = argparse.ArgumentParser(description="NBRO + EMBER on one or several Atlas accounts, from one file")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--test-telegram", action="store_true", help="send one test message and exit")
+    ap.add_argument("--weekly-summary-now", action="store_true",
+                    help="send the weekly summary now (the bots must be running) and exit")
     a = ap.parse_args()
     if a.test_telegram:
         return test_telegram()
+    if a.weekly_summary_now:
+        for i, acc in enumerate(ACCOUNTS):
+            lb = acc.get("label") or f"Bot{i + 1}"
+            HUB_TARGETS[f"{i}/nbro"] = (f"{lb} NBRO", NBRO_FIRST_PORT + i)
+            HUB_TARGETS[f"{i}/ember"] = (f"{lb} EMBER", EMBER_FIRST_PORT + i)
+            HUB_ACCOUNTS.append((lb, [f"{i}/nbro", f"{i}/ember"]))
+        text = weekly_summary_text()
+        print(text)
+        print("\nSent to Telegram." if _send_telegram(text) else "")
+        return
     if not ACCOUNTS:
         raise SystemExit("ACCOUNTS is empty: add your account(s) at the top of atlas_bot.py")
     plan = [commands(i, acc) for i, acc in enumerate(ACCOUNTS)]
@@ -366,6 +492,8 @@ def main():
         HUB_PROCS[f"{i}/nbro"], HUB_PROCS[f"{i}/ember"] = running[label]
         time.sleep(3)
     start_hub()
+    threading.Thread(target=_weekly_summary_loop, daemon=True).start()
+    print("Weekly Telegram summary: every Saturday from 02:00 UTC (10:00 in the Philippines).")
     print(f"\nRunning {len(running)} account(s). Ctrl+C stops everything.\n")
     try:
         while running:
