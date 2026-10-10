@@ -121,6 +121,8 @@ def commands(i, acc):
             "--port", str(NBRO_FIRST_PORT + i), "--label", f"{label}-NBRO", *common]
     ember = [sys.executable, os.path.join(RUN_DIR, "ember_app.py"), "--symbols", "XAUUSD", *(["BTCUSD"] if acc.get("btc") else []),
              *STAGES[stage]["ember"], "--port", str(EMBER_FIRST_PORT + i), "--label", f"{label}-EMBER", *common]
+    if acc.get("ember", True) is False:         # e.g. a $5k account: gold's smallest lot is ~3% risk there, so NBRO only
+        ember = None
     return label, stage, nbro, ember
 
 
@@ -195,7 +197,7 @@ button.stop{background:#7f1d1d}button.start{background:#166534}button:disabled{o
 <table><thead><tr><th>Market</th><th>Bot</th><th>Status</th><th>Today</th><th>Open trade</th><th></th></tr></thead><tbody id="rows"></tbody></table>
 <div id="note">Stop = no new trades on that market (its waiting orders are cancelled); an open trade is still managed and closed by its rules.</div>
 <script>
-const ACC = "__ACC__";
+const ACC = "__ACC__", HAS_EMBER = __HASEMBER__;
 const f2 = (x, d=2) => (x === null || x === undefined || isNaN(x)) ? "-" : Number(x).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
 async function get(bot){ try { const r = await fetch("/b/"+ACC+"/"+bot+"/status"); return r.ok ? await r.json() : null; } catch(e){ return null; } }
 async function post(bot, body){ return fetch("/b/"+ACC+"/"+bot+"/control",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }
@@ -221,7 +223,7 @@ function row(sym, bot, running, status, today, trade, up){
          '<br><span class="muted">'+(status||"")+'</span></td><td>'+(today||"-")+'</td><td>'+tradeCell(trade)+'</td><td>'+btn+'</td></tr>';
 }
 async function load(){
-  [N, E] = await Promise.all([get("nbro"), get("ember")]);
+  [N, E] = await Promise.all([get("nbro"), HAS_EMBER ? get("ember") : Promise.resolve(null)]);
   const g = (E && E.guards) || {}, ng = (N && N.guards) || {};
   const bal = g.balance ?? ng.account_balance, eq = g.equity ?? ng.equity;
   const dd = (N && N.guards && N.guards.drawdown) || (E && E.guards && E.guards.drawdown) || {};
@@ -243,7 +245,7 @@ async function load(){
     const today = st && st.range_high ? "band "+f2(st.range_low)+" - "+f2(st.range_high)+(st.vwap?"<br><span class=muted>VWAP "+f2(st.vwap)+"</span>":"") : "";
     html += row(s, "nbro", run, st ? st.phase : "", today, ot, !!N);
   }
-  const esyms = E ? (E.active_symbols||Object.keys(E.symbols||{})) : ["XAUUSD"];
+  const esyms = !HAS_EMBER ? [] : E ? (E.active_symbols||Object.keys(E.symbols||{})) : ["XAUUSD"];
   for (const s of esyms) {
     const st = E ? E.symbols[s] : null, run = st ? st.enabled !== false : false;
     const today = st && st.today_long_level ? "buy above "+f2(st.today_long_level)+"<br>sell below "+f2(st.today_short_level) : "";
@@ -297,7 +299,9 @@ class HubHandler(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             return self._send(200, _hub_page(self.server.acc).encode(), "text/html; charset=utf-8")
         if self.path == "/overview":
-            return self._send(200, OVERVIEW_HTML.replace("__ACC__", str(self.server.acc)).encode(), "text/html; charset=utf-8")
+            has_ember = any(k.endswith("/ember") for k in HUB_ACCOUNTS[self.server.acc][1])
+            return self._send(200, OVERVIEW_HTML.replace("__ACC__", str(self.server.acc)).replace("__HASEMBER__", "true" if has_ember else "false")
+                              .encode(), "text/html; charset=utf-8")
         if self.path == "/alive":
             import json
             return self._send(200, json.dumps({HUB_TARGETS[k][0]: HUB_PROCS[k].poll() is None for k in HUB_ACCOUNTS[self.server.acc][1] if k in HUB_PROCS}).encode(),
@@ -459,7 +463,7 @@ def main():
             lb = acc.get("label") or f"Bot{i + 1}"
             HUB_TARGETS[f"{i}/nbro"] = (f"{lb} NBRO", NBRO_FIRST_PORT + i)
             HUB_TARGETS[f"{i}/ember"] = (f"{lb} EMBER", EMBER_FIRST_PORT + i)
-            HUB_ACCOUNTS.append((lb, [f"{i}/nbro", f"{i}/ember"]))
+            HUB_ACCOUNTS.append((lb, [f"{i}/nbro"] + ([f"{i}/ember"] if acc.get("ember", True) is not False else [])))
         text = weekly_summary_text()
         print(text)
         print("\nSent to Telegram." if _send_telegram(text) else "")
@@ -467,11 +471,11 @@ def main():
     if not ACCOUNTS:
         raise SystemExit("ACCOUNTS is empty: add your account(s) at the top of atlas_bot.py")
     plan = [commands(i, acc) for i, acc in enumerate(ACCOUNTS)]
-    print(f"{'#':<3}{'account':<12}{'stage':<12}{'dashboard':<26}MT5")
-    for i, (label, stage, _, _) in enumerate(plan):
-        print(f"{i + 1:<3}{label:<12}{stage:<12}{'http://127.0.0.1:' + str(HUB_PORT + i):<26}"
+    print(f"{'#':<3}{'account':<12}{'stage':<12}{'bots':<13}{'dashboard':<26}MT5")
+    for i, (label, stage, _, ember) in enumerate(plan):
+        print(f"{i + 1:<3}{label:<12}{stage:<12}{'NBRO+EMBER' if ember else 'NBRO only':<13}{'http://127.0.0.1:' + str(HUB_PORT + i):<26}"
               f"{ACCOUNTS[i].get('mt5_path') or '(this PC default MT5)'}")
-        HUB_ACCOUNTS.append((label, [f"{i}/nbro", f"{i}/ember"]))
+        HUB_ACCOUNTS.append((label, [f"{i}/nbro"] + ([f"{i}/ember"] if ember else [])))
         HUB_TARGETS[f"{i}/nbro"] = (f"{label} NBRO", NBRO_FIRST_PORT + i)
         HUB_TARGETS[f"{i}/ember"] = (f"{label} EMBER", EMBER_FIRST_PORT + i)
     problems = check_setup()
@@ -482,14 +486,18 @@ def main():
                                  "not set in the settings (an existing bots telegram file, if any, is still used)"))
     if a.dry_run:
         for label, _, nbro, ember in plan:
-            print(f"\n[{label}] " + " ".join(nbro) + f"\n[{label}] " + " ".join(ember))
+            print(f"\n[{label}] " + " ".join(nbro) + (f"\n[{label}] " + " ".join(ember) if ember else f"\n[{label}] (no EMBER)"))
         return
     flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
     running = {}
     for i, (label, _, nbro, ember) in enumerate(plan):
-        running[label] = (subprocess.Popen(nbro, cwd=RUN_DIR, creationflags=flags),
-                          subprocess.Popen(ember, cwd=RUN_DIR, creationflags=flags))
-        HUB_PROCS[f"{i}/nbro"], HUB_PROCS[f"{i}/ember"] = running[label]
+        procs = {"NBRO": subprocess.Popen(nbro, cwd=RUN_DIR, creationflags=flags)}
+        if ember:
+            procs["EMBER"] = subprocess.Popen(ember, cwd=RUN_DIR, creationflags=flags)
+        running[label] = procs
+        HUB_PROCS[f"{i}/nbro"] = procs["NBRO"]
+        if ember:
+            HUB_PROCS[f"{i}/ember"] = procs["EMBER"]
         time.sleep(3)
     start_hub()
     threading.Thread(target=_weekly_summary_loop, daemon=True).start()
@@ -497,20 +505,22 @@ def main():
     print(f"\nRunning {len(running)} account(s). Ctrl+C stops everything.\n")
     try:
         while running:
-            for label, (pn, pe) in list(running.items()):
-                dead = [n for n, p in (("NBRO", pn), ("EMBER", pe)) if p.poll() is not None]
+            for label, procs in list(running.items()):
+                dead = [n for n, p in procs.items() if p.poll() is not None]
                 if dead:
                     print(f"[{label}] {' and '.join(dead)} stopped: stopping the other bot of {label} too.")
-                    stop(pn); stop(pe)
+                    for p in procs.values():
+                        stop(p)
                     del running[label]
             time.sleep(5)
         print("All accounts stopped.")
     except KeyboardInterrupt:
         print("\nStopping all accounts...")
-        for pn, pe in running.values():
-            stop(pn); stop(pe)
-        for pn, pe in running.values():
-            for p in (pn, pe):
+        for procs in running.values():
+            for p in procs.values():
+                stop(p)
+        for procs in running.values():
+            for p in procs.values():
                 try:
                     p.wait(timeout=20)
                 except subprocess.TimeoutExpired:

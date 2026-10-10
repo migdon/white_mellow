@@ -31,6 +31,8 @@ Each line in ACCOUNTS is one Atlas account (one MT5 terminal each).
             with several accounts, give each its own MT5:  r"C:\\MT5_Atlas2\\terminal64.exe"
   stage     "evaluation" while passing the +3% challenge, "funded" after you pass
   btc       False (recommended): BTCUSD is not traded
+  ember     leave it out (= gold is traded). Put "ember": False on a $5K account: there the smallest gold lot
+            would risk ~3%, so EMBER could never trade; the account then runs NBRO only (NAS100 + SPX500)
 
 Dashboards: the 1st account http://127.0.0.1:8800, the 2nd :8801, the 3rd :8802 ...
 """
@@ -41,6 +43,8 @@ ACCOUNTS = [
     # {"label": "Bot3", "mt5_path": r"C:\\MT5_Atlas3\\terminal64.exe", "stage": "evaluation", "btc": False},
     # {"label": "Bot4", "mt5_path": r"C:\\MT5_Atlas4\\terminal64.exe", "stage": "evaluation", "btc": False},
     # {"label": "Bot5", "mt5_path": r"C:\\MT5_Atlas5\\terminal64.exe", "stage": "evaluation", "btc": False},
+    # a $5K account: NBRO only
+    # {"label": "Small1", "mt5_path": r"C:\\MT5_Small1\\terminal64.exe", "stage": "evaluation", "btc": False, "ember": False},
 ]
 
 # ---- normally leave these as they are ----
