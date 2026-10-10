@@ -36,11 +36,11 @@ Dashboards: the 1st account http://127.0.0.1:8800, the 2nd :8801, the 3rd :8802 
 """
 
 ACCOUNTS = [
-    {"label": "Atlas1", "mt5_path": None, "stage": "evaluation", "btc": False},
-    # {"label": "Atlas2", "mt5_path": r"C:\\MT5_Atlas2\\terminal64.exe", "stage": "evaluation", "btc": False},
-    # {"label": "Atlas3", "mt5_path": r"C:\\MT5_Atlas3\\terminal64.exe", "stage": "evaluation", "btc": False},
-    # {"label": "Atlas4", "mt5_path": r"C:\\MT5_Atlas4\\terminal64.exe", "stage": "evaluation", "btc": False},
-    # {"label": "Atlas5", "mt5_path": r"C:\\MT5_Atlas5\\terminal64.exe", "stage": "evaluation", "btc": False},
+    {"label": "Bot1", "mt5_path": None, "stage": "evaluation", "btc": False},
+    # {"label": "Bot2", "mt5_path": r"C:\\MT5_Atlas2\\terminal64.exe", "stage": "evaluation", "btc": False},
+    # {"label": "Bot3", "mt5_path": r"C:\\MT5_Atlas3\\terminal64.exe", "stage": "evaluation", "btc": False},
+    # {"label": "Bot4", "mt5_path": r"C:\\MT5_Atlas4\\terminal64.exe", "stage": "evaluation", "btc": False},
+    # {"label": "Bot5", "mt5_path": r"C:\\MT5_Atlas5\\terminal64.exe", "stage": "evaluation", "btc": False},
 ]
 
 # ---- normally leave these as they are ----

@@ -41,9 +41,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # ============================================================================================ EDIT THIS
 ACCOUNTS = [
-    {"label": "Atlas1", "mt5_path": None, "stage": "evaluation", "btc": False},
-    # {"label": "Atlas2", "mt5_path": r"C:\MT5_Atlas2\terminal64.exe", "stage": "evaluation", "btc": False},
-    # {"label": "Atlas3", "mt5_path": r"C:\MT5_Atlas3\terminal64.exe", "stage": "evaluation", "btc": False},
+    {"label": "Bot1", "mt5_path": None, "stage": "evaluation", "btc": False},
+    # {"label": "Bot2", "mt5_path": r"C:\MT5_Atlas2\terminal64.exe", "stage": "evaluation", "btc": False},
+    # {"label": "Bot3", "mt5_path": r"C:\MT5_Atlas3\terminal64.exe", "stage": "evaluation", "btc": False},
 ]
 SUFFIX = ""             # broker symbol suffix, normally empty at Atlas
 HUB_PORT = 8800        # dashboards: account #1 http://127.0.0.1:8800, #2 :8801, #3 :8802 ... (NBRO + EMBER of that account)
@@ -116,7 +116,7 @@ def commands(i, acc):
     if stage not in STAGES:
         raise SystemExit(f"Account {acc.get('label', i + 1)}: stage must be 'evaluation' or 'funded', not {stage!r}")
     common = (["--mt5-path", acc["mt5_path"]] if acc.get("mt5_path") else []) + (["--suffix", SUFFIX] if SUFFIX else [])
-    label = acc.get("label") or f"Atlas{i + 1}"
+    label = acc.get("label") or f"Bot{i + 1}"
     nbro = [sys.executable, os.path.join(RUN_DIR, "nbro_app.py"), *STAGES[stage]["nbro"],
             "--port", str(NBRO_FIRST_PORT + i), "--label", f"{label}-NBRO", *common]
     ember = [sys.executable, os.path.join(RUN_DIR, "ember_app.py"), "--symbols", "XAUUSD", *(["BTCUSD"] if acc.get("btc") else []),
