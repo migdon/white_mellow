@@ -302,6 +302,9 @@ ATLAS_PRESETS = {
     "fn-lite-funded": {"risk": 0.5, "max_dd": 8.0, "daily_guard": 2.4, "dd_mode": "static",
                        "profit_target": None, "shield": 0.0, "max_open_risk": 1.0},
 }
+# A small account can't always size down far enough: the broker's minimum lot can risk far more than the % set.
+# A trade whose minimum lot would risk more than this many times the set % is skipped instead of forced.
+MAX_RISK_OVERSHOOT = 2.0
 MAX_ACCOUNT_DRAWDOWN_SAFETY_BUFFER_PCT = 0.5   # stop entries this much %
                                     # of original balance BEFORE the real
                                     # hard floor, not exactly at it —
@@ -2180,6 +2183,14 @@ def _try_enter(symbol, state, bars, equity, logs):
     else:
         vol = DEFAULT_LOT_SIZE.get(symbol, 0.10)
     vol = _normalize_volume(symbol, vol)
+    if USE_RISK_BASED_SIZING:
+        _want = _risk_pct_for(symbol)
+        _real = _risk_pct_of(symbol, vol, entry_price, sl, equity)
+        if _want > 0 and _real > _want * MAX_RISK_OVERSHOOT:
+            return _skip_signal(state, symbol, direction,
+                                f"Account too small for this market: the broker's minimum lot risks {_real:.2f}% "
+                                f"at the emergency stop, more than {MAX_RISK_OVERSHOOT:g}x the {_want:g}% set. "
+                                f"Skipped (pause this market in Settings, or use a bigger account).", logs)
 
     if MAX_CONCURRENT_RISK_ENABLED:
         new_risk = _risk_pct_of(symbol, vol, entry_price, sl, equity)
@@ -3805,6 +3816,12 @@ if __name__ == "__main__":
     ap.add_argument("--preset", choices=sorted(ATLAS_PRESETS), default=None,
                     help="Atlas 1-Step Access: atlas-eval / atlas-funded. FundedNext Stellar: fn-2step-p1 / fn-2step-p2 / "
                          "fn-2step-funded, fn-1step / fn-1step-funded, fn-lite-p1 / fn-lite-p2 / fn-lite-funded; other flags override it")
+    ap.add_argument("--firm-daily", type=float, default=None,
+                    help="ANY prop firm: its daily loss limit %% (e.g. 5). With --firm-max the bot sets itself up: "
+                         "guard = 60%% of it, risk per index = min(daily/5, max/10, 1.0)%% (x0.85 if trailing, x0.5 funded)")
+    ap.add_argument("--firm-max", type=float, default=None, help="ANY prop firm: its max loss %% (e.g. 10); see --firm-daily")
+    ap.add_argument("--stage", choices=["eval", "funded"], default="eval",
+                    help="with --firm-daily/--firm-max: eval (challenge) or funded (half the risk)")
     ap.add_argument("--protector-shield", type=float, default=None,
                     help="close this bot's positions at this %% account open loss (Atlas Protector = 2%%); 0 = off")
     ap.add_argument("--risk", type=float, default=None, help="risk %% per trade, applied to every pair")
@@ -3840,6 +3857,31 @@ if __name__ == "__main__":
         PROTECTOR_SHIELD_PCT, MAX_CONCURRENT_RISK_PCT = _p["shield"], _p["max_open_risk"]
         _cli_keys += ["risk_pct_by_symbol", "risk_pct", "daily_loss_guard_pct",
                       "max_account_drawdown_pct", "max_concurrent_risk_pct"]
+    _firm_note = None
+    if (args.firm_daily is None) != (args.firm_max is None):
+        raise SystemExit("Give BOTH --firm-daily and --firm-max (your firm's daily loss % and max loss %).")
+    if args.firm_daily is not None:
+        _trail = (args.dd_mode == "trailing")
+        _r = min(args.firm_daily / 5.0, args.firm_max / 10.0, 1.0) * (0.85 if _trail else 1.0) * (0.5 if args.stage == "funded" else 1.0)
+        _r = round(max(_r, 0.1), 2)
+        RISK_PCT = _r
+        for _k in RISK_PCT_BY_SYMBOL:
+            RISK_PCT_BY_SYMBOL[_k] = _r
+        MAX_ACCOUNT_DRAWDOWN_PCT = args.firm_max
+        DAILY_LOSS_GUARD_PCT = round(0.6 * args.firm_daily, 2)
+        MAX_CONCURRENT_RISK_PCT = round(2 * _r, 2)
+        MAX_ACCOUNT_DRAWDOWN_MODE = "trailing" if _trail else "static"
+        PROTECTOR_SHIELD_PCT = 0.0
+        PROFIT_TARGET_PCT = None if args.stage == "funded" else PROFIT_TARGET_PCT
+        _cli_keys += ["risk_pct_by_symbol", "risk_pct", "daily_loss_guard_pct",
+                      "max_account_drawdown_pct", "max_concurrent_risk_pct"]
+        _firm_note = (f"Firm rules: daily {args.firm_daily:g}%, max {args.firm_max:g}% "
+                      f"{MAX_ACCOUNT_DRAWDOWN_MODE}, stage {args.stage} -> risk {_r:g}% per index, daily guard "
+                      f"{DAILY_LOSS_GUARD_PCT:g}%, open-risk cap {MAX_CONCURRENT_RISK_PCT:g}%.")
+        if args.firm_max < 5 or (_trail and args.firm_max < 8):
+            _firm_note += (" WARNING: this max loss is too tight for NBRO (replays breached 27-50% of challenges "
+                           "at any risk). Expect failures; a 5%/10% static plan suits NBRO far better.")
+        print(_firm_note)
     if args.protector_shield is not None:
         PROTECTOR_SHIELD_PCT = max(0.0, args.protector_shield)
     if args.plan:
@@ -3883,6 +3925,8 @@ if __name__ == "__main__":
     if args.daily_loss is not None:
         DAILY_LOSS_GUARD_PCT = args.daily_loss
 
+    if _firm_note:
+        _log(_firm_note)
     if args.console:
         run()
     else:
